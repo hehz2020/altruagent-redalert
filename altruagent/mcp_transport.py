@@ -1,59 +1,28 @@
-"""Synchronous bridge to Agent_ACP's MCP gameplay server, built on the
-OFFICIAL `mcp` Python SDK client — not a hand-rolled JSON-RPC-over-HTTP
-implementation (see "why" below).
+"""Synchronous official-MCP transport, with an optional persistent session.
 
-History: an earlier version of this module hand-rolled the JSON-RPC 2.0
-envelope directly over ``AltruAgentClient.request()``. It was replaced with
-the official ``mcp.client.streamable_http.streamablehttp_client`` +
-``mcp.ClientSession`` pattern Agent_ACP's own scripts use, which removes any
-doubt about hand-rolled-protocol correctness. (The "Invalid Host header"
-HTTP 421 first seen against the deployed server was a platform-side
-allowed-hosts issue, since fixed in Agent_ACP; no client change was needed.)
+The compatibility path opens a fresh official SDK connection for each call.
+Set ``ALTRUAGENT_PERSISTENT_MCP=1`` to reuse one connection, MCP handshake,
+and tool-schema cache per client/URL. This matters for real-time games.
 
-Sync bridge design: the official SDK is async-only, but the rest of this
-starter (``altruagent.runner``, ``altruagent.worker``, etc.) is deliberately
-synchronous — turning that into asyncio-based code was explicitly ruled
-out. Each call here therefore opens a **fresh** connection + MCP session
-for that ONE tool call, via ``asyncio.run(...)``:
+A persistent connection lives in a dedicated thread. One coroutine owns its
+async context managers from entry through exit (required by AnyIO's cancel
+scopes), and executes requests sequentially. No asyncio objects cross worker
+processes. ``AltruAgentClient.close()`` closes its sessions and their threads.
 
-    asyncio.run() -> streamablehttp_client (fresh HTTP connection)
-                  -> ClientSession -> initialize() -> call_tool() -> close
-
-rather than keeping one long-lived async session open across an entire
-match (which could span many minutes between turns). This is deliberate,
-not a shortcut:
-
-- The server is ``stateless_http=True`` — confirmed in server.py, this
-  means the server itself holds no per-connection session state between
-  requests, so there is no server-side affinity to preserve across calls.
-- ``asyncio.run()`` is documented-safe to call repeatedly, sequentially, in
-  the same process (each call creates and cleanly tears down its own event
-  loop) — the only hard restriction is not calling it from *inside* an
-  already-running loop, which never happens here since nothing else in this
-  process runs asyncio.
-- This sidesteps every cross-call event-loop-lifetime question entirely
-  (Windows' default Proactor loop, multiprocessing ``spawn`` workers each
-  starting with no inherited loop state, a match potentially idling a long
-  time between turns) — there is no persistent
-  loop or connection to keep alive, reconnect, or leak.
-- The cost is one extra TCP handshake + MCP ``initialize`` round-trip per
-  tool call versus a kept-open session. For a turn-based game polling at
-  most a few times a second, this is immaterial.
-
-JWT refresh: this bypasses ``AltruAgentClient.request()`` (the official SDK
-owns its own HTTP transport), so the request()-level one-retry-after-401
-logic can't be reused directly — but the *policy* is preserved exactly,
-through ``AltruAgentClient._current_access_token()`` (same client, same
-auth state, not a second auth system): fetch the current token, try once;
-on a 401 (surfaced by the SDK's own ``response.raise_for_status()`` as
-``httpx.HTTPStatusError`` — confirmed in mcp/client/streamable_http.py),
-force a fresh login and retry exactly once, exactly like ``request()``.
+Transport failures are returned without replaying a possibly accepted action.
+The next caller reconnects. A rejected HTTP 401 may refresh the client's own
+auth state and retry once; it never creates an independent authentication
+system. Initialization and schema loading occur before any tool mutation.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import threading
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -170,6 +139,10 @@ async def _call_tool_once(
             await session.initialize()
             result = await session.call_tool(name, arguments)
 
+    return _parse_result(name, result)
+
+
+def _parse_result(name: str, result: Any) -> dict:
     if result.isError:
         raise MCPToolError(
             f"MCP tool {name!r} failed at the protocol level: {_extract_text(result)}",
@@ -259,6 +232,265 @@ def _wrap_http_status_error(name: str, exc: httpx.HTTPStatusError) -> MCPToolErr
     )
 
 
+@dataclass
+class _ToolRequest:
+    token: str = field(repr=False)
+    name: str
+    arguments: dict = field(repr=False)
+    future: Future
+
+
+class _PersistentCallFailure(Exception):
+    """Carry an SDK failure without discarding whether an action was sent."""
+
+    def __init__(self, cause: BaseException, *, tool_started: bool) -> None:
+        super().__init__(type(cause).__name__)
+        self.cause = cause
+        self.tool_started = tool_started
+
+    def may_refresh_auth(self) -> bool:
+        error = _find_http_status_error(self.cause)
+        if error is None or error.response.status_code != 401:
+            return False
+        if not self.tool_started:
+            return True
+        # A 401 for the actual tool POST rejects that action. A 401 in an
+        # unrelated GET/notification/schema request does not prove that an
+        # in-flight action was rejected, so it must never cause a replay.
+        try:
+            request = error.request
+            body = json.loads(request.content)
+            return request.method == "POST" and body.get("method") == "tools/call"
+        except (ValueError, httpx.RequestNotRead, AttributeError):
+            return False
+
+
+class _PersistentSession:
+    """One SDK owner task, in one private loop, for this client and URL.
+
+    This deliberately does not enter a context manager through one
+    ``run_coroutine_threadsafe`` call and exit it through another: those
+    calls would run in different tasks and corrupt AnyIO's cancel scopes.
+    """
+
+    def __init__(self, url: str, httpx_client_factory=None) -> None:
+        self.url = url
+        self.httpx_client_factory = httpx_client_factory
+        self.pid = os.getpid()
+        self._ready = threading.Event()
+        self._state_lock = threading.Lock()
+        self._call_lock = threading.Lock()
+        self._closed = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._queue: asyncio.Queue | None = None
+        self._owner: asyncio.Task | None = None
+        self._active: _ToolRequest | None = None
+        self._tool_started = False
+        self._thread = threading.Thread(target=self._thread_main, name="altruagent-mcp", daemon=True)
+        self._thread.start()
+        if not self._ready.wait(timeout=5.0):
+            self.close()
+            raise TimeoutError("MCP session worker did not start")
+
+    def _thread_main(self) -> None:
+        # Created here, never at import time or before multiprocessing spawn.
+        asyncio.run(self._serve())
+
+    async def _serve(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        self._queue = asyncio.Queue()
+        self._owner = asyncio.current_task()
+        self._ready.set()
+        pending: _ToolRequest | None = None
+        try:
+            while not self._closed:
+                request = pending if pending is not None else await self._queue.get()
+                pending = None
+                if request is None:
+                    return
+                self._active = request
+                self._tool_started = False
+                token = request.token
+                kwargs: dict[str, Any] = {
+                    "headers": {"Authorization": f"Bearer {token}"},
+                    "timeout": MCP_CONNECT_TIMEOUT_SECONDS,
+                    "sse_read_timeout": MCP_READ_TIMEOUT_SECONDS,
+                    # GameAPI is stateless HTTP. A best-effort DELETE during
+                    # teardown adds no value and can delay shutdown by 40 s.
+                    "terminate_on_close": False,
+                }
+                if self.httpx_client_factory is not None:
+                    kwargs["httpx_client_factory"] = self.httpx_client_factory
+                try:
+                    async with streamablehttp_client(self.url, **kwargs) as (read, write, _):
+                        async with ClientSession(
+                            read, write,
+                            read_timeout_seconds=timedelta(seconds=MCP_SESSION_TIMEOUT_SECONDS),
+                        ) as session:
+                            await session.initialize()
+                            # The SDK otherwise fetches schemas *after* its
+                            # first tool result. Prefetching makes all setup
+                            # failures occur before any possibly mutating call.
+                            known_tools: set[str] = set()
+                            cursor = None
+                            for _ in range(32):
+                                listing = await session.list_tools(cursor=cursor)
+                                known_tools.update(tool.name for tool in listing.tools)
+                                cursor = listing.nextCursor
+                                if not cursor:
+                                    break
+                            else:
+                                raise RuntimeError("MCP tool listing exceeded pagination limit")
+                            while True:
+                                if not request.future.cancelled():
+                                    if request.name not in known_tools:
+                                        request.future.set_exception(MCPToolError(
+                                            f"Unknown tool: {request.name!r} (not advertised by the server).",
+                                            status_code=None,
+                                            protocol_error=True,
+                                        ))
+                                    else:
+                                        self._tool_started = True
+                                        result = await session.call_tool(request.name, request.arguments)
+                                        try:
+                                            payload = _parse_result(request.name, result)
+                                        except MCPToolError as exc:
+                                            if not request.future.done():
+                                                request.future.set_exception(exc)
+                                        else:
+                                            if not request.future.done():
+                                                request.future.set_result(payload)
+                                self._active = None
+                                self._tool_started = False
+                                request = await self._queue.get()
+                                if request is None:
+                                    return
+                                self._active = request
+                                if request.token != token:
+                                    pending = request
+                                    break
+                except Exception as exc:  # SDK task-group errors arrive here after safe scope exit.
+                    if self._active is not None and not self._active.future.done():
+                        self._active.future.set_exception(_PersistentCallFailure(
+                            exc, tool_started=self._tool_started,
+                        ))
+                    # Never replay the interrupted request. Only a later call
+                    # opens a fresh transport; the runner first reconciles state.
+                    pending = None
+                    self._active = None
+                    self._tool_started = False
+        except asyncio.CancelledError:
+            pass  # All SDK context managers have already unwound in this task.
+        finally:
+            failure = _PersistentCallFailure(RuntimeError("MCP session closed"), tool_started=True)
+            if self._active is not None and not self._active.future.done():
+                self._active.future.set_exception(failure)
+            while not self._queue.empty():
+                queued = self._queue.get_nowait()
+                if queued is not None and not queued.future.done():
+                    queued.future.set_exception(failure)
+            self._active = None
+            self._closed = True
+
+    def call(self, token: str, name: str, arguments: dict) -> dict:
+        # Public callers are synchronous. Keep requests sequential even if a
+        # user's custom agent happens to call from multiple threads.
+        with self._call_lock:
+            future: Future = Future()
+            with self._state_lock:
+                if self._closed or self.pid != os.getpid() or not self._thread.is_alive():
+                    raise _PersistentCallFailure(RuntimeError("MCP session is closed"), tool_started=False)
+                self._loop.call_soon_threadsafe(
+                    self._queue.put_nowait, _ToolRequest(token, name, arguments, future),
+                )
+            try:
+                # Initialization, schema load, and the actual request each
+                # have an SDK timeout. This is also a total wall-time backstop.
+                return future.result(timeout=3 * MCP_SESSION_TIMEOUT_SECONDS + MCP_CONNECT_TIMEOUT_SECONDS + 5)
+            except FutureTimeoutError as exc:
+                future.cancel()
+                self.close()
+                raise _PersistentCallFailure(TimeoutError("MCP request exceeded total timeout"), tool_started=True) from exc
+
+    def close(self) -> None:
+        # A fork cannot safely use locks/loops inherited from other threads.
+        # Production uses spawn, but dropping an inherited owner is still safe.
+        if self.pid != os.getpid():
+            self._closed = True
+            return
+        with self._state_lock:
+            if not self._closed:
+                self._closed = True
+                if self._loop is not None and self._loop.is_running():
+                    self._loop.call_soon_threadsafe(self._queue.put_nowait, None)
+        if threading.current_thread() is self._thread:
+            return
+        self._thread.join(timeout=5.0)
+        if self._thread.is_alive() and self._loop is not None and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._owner.cancel)
+            self._thread.join(timeout=5.0)
+
+
+_PERSISTENT_CACHE_LOCK = threading.Lock()
+
+
+def close_persistent_sessions(client: "AltruAgentClient") -> None:
+    """Idempotent client-lifecycle cleanup, also useful to standalone callers."""
+    with _PERSISTENT_CACHE_LOCK:
+        sessions = list(getattr(client, "_mcp_persistent_sessions", {}).values())
+        client._mcp_persistent_sessions = {}
+    for session in sessions:
+        session.close()
+
+
+def _persistent_session(client: "AltruAgentClient", url: str, httpx_client_factory) -> _PersistentSession:
+    with _PERSISTENT_CACHE_LOCK:
+        sessions = getattr(client, "_mcp_persistent_sessions", None)
+        if sessions is None:
+            sessions = client._mcp_persistent_sessions = {}
+        session = sessions.get(url)
+        if session is not None and (
+            session.pid != os.getpid() or session._closed or
+            session.httpx_client_factory is not httpx_client_factory
+        ):
+            session.close()
+            session = None
+        if session is None:
+            session = sessions[url] = _PersistentSession(url, httpx_client_factory)
+        return session
+
+
+def _call_persistent(client: "AltruAgentClient", url: str, name: str, arguments: dict, *, httpx_client_factory=None) -> dict:
+    token = client._current_access_token()
+    session = _persistent_session(client, url, httpx_client_factory)
+    for attempt in range(2):
+        try:
+            return session.call(token, name, arguments)
+        except MCPToolError:
+            raise
+        except _PersistentCallFailure as exc:
+            cause = exc.cause
+            serialization = _find_serialization_error(cause)
+            if serialization is not None:
+                raise _unsendable_arguments(name, serialization) from None
+            if attempt == 0 and exc.may_refresh_auth():
+                token = client._current_access_token(force_relogin=True)
+                continue
+            http_error = _find_http_status_error(cause)
+            if http_error is not None:
+                # Do not echo response bodies, URLs, tokens or SDK exception
+                # reprs into match logs. The status suffices for recovery.
+                raise MCPToolError(
+                    f"MCP tool {name!r} request failed with HTTP {http_error.response.status_code}.",
+                    status_code=http_error.response.status_code,
+                ) from None
+            raise MCPToolError(
+                f"MCP tool {name!r} transport failed ({type(cause).__name__}); reconcile state before retrying an action.",
+                status_code=None,
+            ) from None
+    raise AssertionError("unreachable")
+
+
 def call_tool(
     client: "AltruAgentClient",
     mcp_url: str,
@@ -279,6 +511,8 @@ def call_tool(
     production callers never pass it.
     """
     _check_arguments(name, arguments)
+    if os.environ.get("ALTRUAGENT_PERSISTENT_MCP", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return _call_persistent(client, mcp_url, name, arguments, httpx_client_factory=httpx_client_factory)
     token = client._current_access_token()
     try:
         return asyncio.run(

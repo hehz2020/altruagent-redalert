@@ -32,7 +32,7 @@ FIELDS = {
     "set_primary": ({"building"}, set()),
 }
 PRODUCTION = {"build", "train"}
-TRACKED = PRODUCTION | {"place", "deploy"}
+TRACKED = PRODUCTION | {"place", "deploy", "cancel"}
 
 
 def fingerprint(order: dict) -> str:
@@ -59,12 +59,16 @@ def validate_order(order: Any, v: View) -> dict | None:
         ids = list(dict.fromkeys(i for i in ids if isinstance(i, int) and not isinstance(i, bool) and i in own))
         if cmd == "deploy":
             ids = [i for i in ids if str(units[i].get("type", "")).lower() == "mcv"]
+            if isinstance(v.legal.get("deploy"), list):
+                candidates = [a.get("id") if isinstance(a, dict) else a for a in v.legal["deploy"]]
+                allowed = {i for i in candidates if isinstance(i, int) and not isinstance(i, bool)}
+                ids = [i for i in ids if i in allowed]
         if cmd == "harvest":
             ids = [i for i in ids if str(units[i].get("type", "")).lower() == "harv"]
         if not ids:
             return None
         o["units"] = ids
-    if "building" in o and (isinstance(o["building"], bool) or o["building"] not in buildings):
+    if "building" in o and (not isinstance(o["building"], int) or isinstance(o["building"], bool) or o["building"] not in buildings):
         return None
     for field in ("to", "at"):
         if field in o:
@@ -77,9 +81,9 @@ def validate_order(order: Any, v: View) -> dict | None:
     if cmd == "attack":
         if ("target" in o) == ("to" in o):
             return None
-        if "target" in o and (isinstance(o["target"], bool) or o["target"] not in enemies):
+        if "target" in o and (not isinstance(o["target"], int) or isinstance(o["target"], bool) or o["target"] not in enemies):
             return None
-    if cmd == "guard" and (isinstance(o["target"], bool) or o["target"] not in {**units, **buildings}):
+    if cmd == "guard" and (not isinstance(o["target"], int) or isinstance(o["target"], bool) or o["target"] not in {**units, **buildings}):
         return None
     if "item" in o:
         if not isinstance(o["item"], str):
@@ -87,13 +91,8 @@ def validate_order(order: Any, v: View) -> dict | None:
         o["item"] = o["item"].lower()
         if cmd in PRODUCTION and not v.available(o["item"], cmd):
             return None
-        if cmd == "place" and not any(str(p.get("item", "")).lower() == o["item"] and p.get("ready") for p in v.production):
-            # Some server versions return ready items only in legal_actions.place.
-            ready = v.legal.get("place", [])
-            names = [p if isinstance(p, str) else p.get("item", p.get("type"))
-                     for p in ready if isinstance(p, (dict, str))]
-            if o["item"] not in names:
-                return None
+        if cmd == "place" and o["item"] not in v.ready_to_place():
+            return None
     if "count" in o:
         limit = int(number(v.raw.get("limits", {}).get("max_train_count", 10), 10))
         if isinstance(o["count"], bool) or not isinstance(o["count"], int) or not 1 <= o["count"] <= min(10, max(1, limit)):
@@ -214,19 +213,31 @@ class Controller:
             cmd = o["cmd"]
             reflected = False
             if cmd in PRODUCTION:
-                reflected = (v.count(item) > r["baseline_count"]
-                             or any(str(p.get("item", "")).lower() == item for p in v.production))
+                # A batch is not fully confirmed merely because its first
+                # unit appeared. Reserve only the portion not yet represented
+                # by observed actors or queued items, avoiding double counting.
+                new_ids = {a["id"] for a in v.units + v.buildings
+                           if str(a.get("type", "")).lower() == item} - r["baseline_ids"]
+                r["created_ids"].update(new_ids)
+                represented = len(r["created_ids"]) + max(0, v.production_count(item) - r["baseline_queued"])
+                r["remaining_count"] = max(0, o.get("count", 1) - represented)
+                reflected = r["remaining_count"] == 0
             elif cmd == "place":
                 reflected = v.count(item) > r["baseline_count"]
+            elif cmd == "cancel":
+                # cancel removes one queued item, not the entire batch. Wait
+                # for a smaller observed queue before cancelling another.
+                reflected = v.production_count(item) < r["baseline_queued"]
             elif cmd == "deploy":
                 reflected = any(u not in {a["id"] for a in v.units} for u in o["units"])
             if reflected:
                 r["pending"] = False
                 self.stats["observed_confirmations"] += 1
-            elif v.now - r["sent_at"] >= 8.0 and v.tick > r["tick"]:
-                # Eight seconds of advancing observations with no resulting
-                # actor/queue is a bounded recovery heuristic, not exactly-once
-                # delivery. This conservative timeout must be tested live.
+            elif v.now - r["sent_at"] >= r["confirm_timeout"] and v.tick > r["tick"]:
+                # Advancing observations without the full expected result
+                # eventually release the reservation. Batches get a longer
+                # build-time-based window. This is bounded recovery, not an
+                # exactly-once delivery guarantee.
                 r["pending"] = False
                 self.stats["unconfirmed_expiries"] += 1
                 self._cooldowns[r["key"]] = max(self._cooldowns.get(r["key"], 0), v.now + 1)
@@ -257,14 +268,17 @@ class Controller:
             return None
         self._last_tick = v.tick
         self.stats["observations"] += 1
-        pending = [r["order"] for r in self._records.values() if r["pending"]]
+        pending = [{**r["order"], "count": r["remaining_count"]}
+                   if r["order"]["cmd"] == "train" else r["order"]
+                   for r in self._records.values() if r["pending"]]
         v.pending_orders = pending
         candidates = self.economy.propose(v) + self.military.propose(v)
         candidates.sort(key=lambda p: p.priority, reverse=True)
         limits = raw.get("limits") or {}
         max_orders = min(20, max(1, int(number(limits.get("max_orders_per_batch"), 20))))
         max_units = min(50, max(1, int(number(limits.get("max_units_per_order"), 50))))
-        max_expanded = min(200, max(1, int(number(limits.get("max_commands_per_batch"), 200))))
+        max_expanded = min(200, max(1, int(number(limits.get("max_engine_commands_per_batch",
+                                             limits.get("max_commands_per_batch")), 200))))
         orders: list[dict] = []
         meta: list[tuple[Intent, str]] = []
         claimed: set[int] = set()
@@ -313,10 +327,17 @@ class Controller:
         self._last_ids = []
         for o, (intent, key) in zip(orders, meta):
             self._serial += 1
+            count = o.get("count", 1)
+            duration = number(v.spec(o.get("item", "")).get("build_time_s"), 30)
             self._records[self._serial] = {
                 "order": o, "key": key, "pending": o["cmd"] in TRACKED,
                 "sent_at": v.now, "tick": v.tick,
                 "baseline_count": v.count(o.get("item", "")), "verdict": None,
+                "baseline_ids": {a["id"] for a in v.units + v.buildings
+                                 if str(a.get("type", "")).lower() == o.get("item", "")},
+                "baseline_queued": v.production_count(o.get("item", "")),
+                "created_ids": set(), "remaining_count": count,
+                "confirm_timeout": max(8.0, min(120.0, duration * count * 2 + 8)) if count > 1 else 8.0,
             }
             self._last_ids.append(self._serial)
         self._by_version[int(number(raw.get("state_version"), v.tick))] = list(self._last_ids)

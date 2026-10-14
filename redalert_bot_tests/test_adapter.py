@@ -209,7 +209,10 @@ class AdapterTests(unittest.TestCase):
             files = list(Path(directory).glob("*.jsonl"))
             self.assertEqual(len(files), 1)
             self.assertRegex(files[0].name, r"^[a-f0-9]{32}\.jsonl$")
-            self.assertEqual(stat.S_IMODE(files[0].stat().st_mode), 0o600)
+            if os.name == "posix":
+                # Windows access control is inherited from the user's log
+                # directory; stat() does not represent POSIX owner bits there.
+                self.assertEqual(stat.S_IMODE(files[0].stat().st_mode), 0o600)
             text = files[0].read_text()
             self.assertNotIn(secret, text)
             records = [json.loads(line) for line in text.splitlines()]

@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import linecache
 import os
+import math
 import random
 import re
 import sysconfig
@@ -123,6 +124,7 @@ from .models import DecisionContext, GameState, LegalAction, Match
 
 # The sleep between reads against a server without wait_for_update.
 DEFAULT_WAIT_SECONDS = 5.0
+REALTIME_FALLBACK_WAIT_SECONDS = 0.2
 
 # A temporary failure of any gameplay call (a dropped connection, a gateway or
 # server error, a game engine that is busy: ``errors.is_transient_error``)
@@ -481,6 +483,21 @@ def _is_realtime(state: GameState) -> bool:
     return isinstance(pacing, dict) and pacing.get("mode") == _REALTIME_PACING
 
 
+def _fallback_wait_seconds(state: GameState, turn_based_wait: float) -> float:
+    """Old servers without long-poll still need responsive real-time reads.
+
+    This does not affect action pacing or error backoff. Respect a larger
+    server-advertised minimum interval; malformed values fall back to 0.2 s.
+    """
+    if not _is_realtime(state):
+        return turn_based_wait
+    pacing = state.raw.get("pacing") or {}
+    interval = pacing.get("min_batch_interval_s", REALTIME_FALLBACK_WAIT_SECONDS)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)) or not math.isfinite(interval):
+        interval = REALTIME_FALLBACK_WAIT_SECONDS
+    return max(REALTIME_FALLBACK_WAIT_SECONDS, interval)
+
+
 def _resolve_result_hook(choose_action: Any) -> Callable[[dict, DecisionContext], Any] | None:
     """An optional ``on_action_result(result, context)`` on the agent object
     (resolved from the original value, like ``choose_message``)."""
@@ -805,17 +822,52 @@ def run_game(
     decision_fn = _resolve_decision_fn(choose_action)
     message_decision_fn = _resolve_message_decision_fn(choose_action)
     result_hook = _resolve_result_hook(choose_action)
+    timing_hook = getattr(choose_action, "on_runtime_timing", None)
+    timing_hook = timing_hook if callable(timing_hook) else None
+    timing_started = now() if timing_hook is not None else 0.0
+
+    def report_timing(record: dict) -> None:
+        if timing_hook is not None:
+            try:
+                timing_hook(record, context)
+            except Exception:
+                # Diagnostics must never change gameplay or retry behavior.
+                pass
+
+    def timed(phase: str, call: Callable[[], Any]) -> Any:
+        if timing_hook is None:
+            return call()
+        started = now()
+        succeeded = False
+        answer = None
+        try:
+            answer = call()
+            succeeded = True
+            return answer
+        finally:
+            ended = now()
+            record = {"phase": phase, "elapsed_s": max(0.0, ended - started),
+                      "since_start_s": max(0.0, ended - timing_started), "ok": succeeded}
+            if isinstance(answer, GameState):
+                record["state_version"] = answer.state_version
+                game_time = answer.raw.get("time")
+                if isinstance(game_time, dict):
+                    seconds = game_time.get("game_seconds")
+                    if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and math.isfinite(seconds):
+                        record["game_seconds"] = seconds
+            report_timing(record)
+
     long_poll_supported = True
     config_fetched = False
     retry = _TransientRetry(sleep=sleep, now=now, log=log)
 
-    def read(call: Callable[[], Any], *, settles: bool = True) -> Any:
+    def read(call: Callable[[], Any], *, settles: bool = True, phase: str | None = None) -> Any:
         """One read of the game (safe to repeat), retried in place after a
         temporary failure. ``settles=False``: the read alone doesn't end a
         spell of trouble (see ``recover``)."""
         while True:
             try:
-                answer = call()
+                answer = timed(phase or getattr(call, "__name__", "read"), call)
             except AltruAgentError as exc:
                 if not _is_retried(exc):
                     raise
@@ -847,13 +899,14 @@ def run_game(
                         since_is_current_actor=bool(current.is_current_actor),
                         since_phase=current.phase,
                         timeout_seconds=WAIT_FOR_UPDATE_TIMEOUT_SECONDS,
-                    )
+                    ),
+                    phase="wait_for_update",
                 )
             except MCPToolError as exc:
                 if not _is_unknown_tool_error(exc):
                     raise
                 long_poll_supported = False
-        sleep(wait_seconds)
+        timed("fallback_wait", lambda: sleep(_fallback_wait_seconds(current, wait_seconds)))
         return read(game.get_state)
 
     state = read(game.get_state)
@@ -923,7 +976,7 @@ def run_game(
             realtime = _is_realtime(state)
             if realtime and not config_fetched:
                 config_fetched = True
-                context = _with_game_config(game, context)
+                context = timed("get_game_config", lambda: _with_game_config(game, context))
             if state.raw.get("legal_actions") is None:
                 # The server omits legal_actions when a move landed between
                 # its state and legal-actions reads; fetch them directly.
@@ -934,7 +987,7 @@ def run_game(
                 state.state_version = int(legal.get("state_version", state.state_version))
 
             decision = _validate_decision(
-                _invoke_decision(decision_fn, state, context), state.legal_actions
+                timed("decision", lambda: _invoke_decision(decision_fn, state, context)), state.legal_actions
             )
             if decision is WAIT:
                 if not realtime:
@@ -960,12 +1013,12 @@ def run_game(
                         if decision.reasoning_summary
                         else {}
                     )
-                    result = game.play_action(
+                    result = timed("play_action", lambda: game.play_action(
                         action_id=decision.action_id,
                         action=decision.action,
                         state_version=state.state_version,
                         **reasoning,
-                    )
+                    ))
             except AltruAgentError as exc:
                 code = exc.error_code if isinstance(exc, MCPToolError) else None
                 recovered = code in _RACE_ERROR_CODES or (

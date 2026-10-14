@@ -1,49 +1,62 @@
-# AltruAgent Red Alert Bot
+# AltruAgent Red Alert Bot — v2
 
-A self-hosted, deterministic Python bot for the AltruAgent OpenRA Red Alert tournament. The Red Alert strategy runs without an LLM or an OpenAI API key. It manages construction, harvesting, scouting, army grouping, defense, attack and retreat through the authorized player-facing SDK.
+A deterministic, self-hosted Red Alert bot for AltruAgent. The Red Alert strategy does not use an LLM or require a model API key. Its independent Python policy adopts ideas from [Spearhead AI](https://github.com/Vintorez91/Spearhead-AI): continuous production, protected economic recovery, resource-oriented expansion, reconnaissance memory and coordinated local combat. It is an adaptation to the platform player interface, not the original native-engine bot. See [sources and attribution](SOURCES.md).
 
-This repository includes the official [AltruAgent starter](https://github.com/UCLA-Trustworthy-AI-Lab/altruagent-starter), plus the `altru_redalert` package. See [the original starter README](README_STARTER.md) for SDK documentation and [the Chinese bot guide](README_REDALERT_ZH.md) for strategy, logging and configuration details.
+## Windows: download and run
 
-## Setup on Windows
+Use the delivered Windows ZIP, or a published build from [Releases](https://github.com/hehz2020/altruagent-redalert/releases/latest). Extract the whole archive and double-click **AltruAgentRedAlert.exe**. Python is included. For portable builds, keep the `runtime` and `app` directories beside the EXE.
 
-Use Python 3.11 or newer; the offline validation used Python 3.12. Open Command Prompt in this repository's root folder and run each line separately:
+1. Choose **1** for Testing, **2** for Tournament, or **3** for both.
+2. Paste your Official Agent Key at the hidden prompt and press Enter.
+3. Keep the window open and your computer awake and online. Stop the old bot first; use one launcher per account.
 
-```bat
-py -m venv .venv
-.venv\Scripts\python.exe -m pip install -e .
-if not exist .env copy .env.example .env
-notepad .env
+For Testing, select Red Alert and **Mine (self-hosted)** on the platform. Tournament participation still requires the platform's registration and Self Hosted configuration. This program does not register, submit or create matches.
+
+Get your Official Agent Key from the platform's **Agent Configuration** page. The entered key stays in process memory. An existing private `.env` beside the EXE is also supported. Build metadata records the source, dependency versions and validation environment. A portable build made in Linux has static PE checks and Python logic tests; it is not evidence of an actual Windows runtime test. The native Windows CI release has the additional executable self-test gate described below.
+
+[中文使用与策略说明](README_REDALERT_ZH.md) · [Validation record](VALIDATION.txt)
+
+## What changed in v2
+
+- Production batches sized to observed decision cadence, available funds and remaining time; reserves include unpaid queue tails and unconfirmed orders.
+- Harvester recovery and retreat, power management, resource-directed refineries and conservative MCV expansion.
+- Separate scouting, defense, main-force and harassment roles; visible-target focus fire, weapon/armor estimates, artillery spacing, local strength and stable retreat decisions.
+- Historical sightings guide movement only. Attack target IDs must be currently visible; every order is checked against ownership, legal actions, map bounds and server limits.
+- Persistent MCP sessions are enabled by the Windows launcher. Ambiguous action failures are not automatically replayed; the controller reconciles fresh observations. Per-phase timing separates network time from policy time.
+
+These changes address issues seen in earlier platform traces. Offline checks do not establish a new competitive win rate or guarantee victory. Weapon fallbacks are estimates; actual runtime configuration takes precedence.
+
+## Run from source
+
+Use Python 3.11+. From the repository root:
+
+```bash
+python -m pip install -e .
 ```
 
-In `.env`, replace `eak_live_your_key_here` with your Official Agent Key from the tournament dashboard. Keep `.env` private. Optional local observation logging can be enabled with `REDALERT_LOG_DIR=redalert_logs`.
+Copy `.env.example` to your private `.env`, set `ALTRUAGENT_OFFICIAL_AGENT_KEY`, and set `ALTRUAGENT_PERSISTENT_MCP=1` to use connection reuse. Then:
 
-Check the setup, then wait for Red Alert Testing matches:
-
-```bat
-.venv\Scripts\python.exe -m agent --check-tournament --agent altru_redalert
-.venv\Scripts\python.exe -m agent --match --agent altru_redalert
+```bash
+python -m agent --check-tournament --agent altru_redalert
+python -m agent --match --agent altru_redalert
 ```
 
-On the platform's Testing page, select Red Alert and choose **Mine (self-hosted)** for your seat. Keep the process running, the computer connected and sleep disabled while playing. To stop it, press Ctrl+C.
+For registered tournament games, stop the Testing process and use either command:
 
-For registered tournament games, stop the Testing process and run:
-
-```bat
-.venv\Scripts\python.exe -m agent --tournament --agent altru_redalert
+```bash
+python -m agent --tournament --agent altru_redalert
+python -m agent --tournament --match --agent altru_redalert
 ```
 
-Run only one dispatcher process for the account. This repository's creation does not register the agent, submit a version or start a live match. Follow the tournament's current submission and registration requirements.
+The second command accepts both tournament and Testing assignments. Waiting uses no AI tokens. The Red Alert policy itself uses no AI tokens either. Optional local diagnostics: `REDALERT_LOG_DIR=redalert_logs`.
 
-## Other games
+## Development and scope
 
-The custom strategy covers Red Alert. Other assigned games delegate to `REDALERT_OTHER_AGENT`, defaulting to `examples.llm_agent`; that fallback needs separate model/API configuration. A successful Red Alert setup check does not validate the fallback's credentials.
-
-## Verification
-
-The bot has passed 36 offline tests and a simulated integration check against the official SDK loop. These are not real game results; no live win rate has been measured. See [VALIDATION.txt](VALIDATION.txt).
-
-```bat
-.venv\Scripts\python.exe -m unittest discover -s redalert_bot_tests -v
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest tests redalert_bot_tests windows/tests -q
 ```
 
-Bot decisions use authorized observations and public configuration. Match-specific tactical memory starts fresh for each game. Dependencies are declared in `pyproject.toml`; no model weights, secrets or recorded match data are bundled.
+[Windows build instructions](windows/README.txt) and the Actions workflow produce a real Windows x64 EXE and test a frozen spawned worker before publishing. The policy covers Red Alert ground warfare; it has no complete air/naval campaign. Other assigned games delegate to `REDALERT_OTHER_AGENT`, defaulting to `examples.llm_agent`, which needs separate model configuration.
+
+This repository includes the [official starter](https://github.com/UCLA-Trustworthy-AI-Lab/altruagent-starter); its original documentation is [README_STARTER.md](README_STARTER.md). No credentials or recorded matches are bundled.

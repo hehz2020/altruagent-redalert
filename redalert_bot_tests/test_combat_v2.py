@@ -1,0 +1,191 @@
+"""Tactical contracts: meaningful scenarios, not claimed win-rate evidence."""
+import unittest
+
+from altru_redalert.combat import Military
+from altru_redalert.core import validate_order
+from altru_redalert.model import View
+from altru_redalert.tactics import damage_rate, force_ratio, health, weapon_range
+from redalert_bot_tests.test_adversarial import actor, snapshot
+
+
+class WeaponMatchupTests(unittest.TestCase):
+    def test_rocket_ground_arm_is_not_replaced_by_runtime_aa_arm(self):
+        cfg = {'rules': {'units': {'e3': {'weapon': {'weapon': 'RedEye',
+                'range_cells': 7.5, 'damage': 2400}}}}}
+        v = View(snapshot(), cfg)
+        rocket, tank, air = actor(1, 'e3'), actor(2, '3tnk'), actor(3, 'yak')
+        self.assertEqual(weapon_range(v, rocket, tank), 5.)
+        self.assertEqual(weapon_range(v, rocket, air), 7.5)
+        self.assertGreater(damage_rate(v, rocket, tank), damage_rate(v, actor(4, 'e1'), tank) * 10)
+
+    def test_rifle_and_flak_target_suitability(self):
+        v = View(snapshot())
+        rifle, flak, air = actor(1, 'e1'), actor(2, 'ftrk'), actor(3, 'yak')
+        self.assertEqual(damage_rate(v, rifle, air), 0)
+        self.assertGreater(damage_rate(v, flak, air), 0)
+        self.assertGreater(damage_rate(v, flak, rifle), 0)
+
+    def test_armor_changes_preferred_target(self):
+        v = View(snapshot())
+        rifle, rocket = actor(1, 'e1'), actor(2, 'e3')
+        infantry, tank = actor(3, 'e1'), actor(4, '3tnk')
+        self.assertGreater(damage_rate(v, rifle, infantry), damage_rate(v, rifle, tank))
+        self.assertGreater(damage_rate(v, rocket, tank), damage_rate(v, rocket, infantry))
+
+    def test_runtime_range_damage_and_health_override_matching_fallback(self):
+        v = View(snapshot(), {'rules': {'units': {'1tnk': {'hp': 100000,
+                 'weapon': {'weapon': '25mm', 'range_cells': 2., 'damage': 100}}}}})
+        tank, target = actor(1, '1tnk'), actor(2, '3tnk')
+        tank['hp'] = 50
+        self.assertEqual(health(v, tank), 50000)
+        self.assertEqual(weapon_range(v, tank, target), 2.)
+        self.assertEqual(damage_rate(v, tank, target, at_distance=3.), 0.)
+        self.assertGreater(damage_rate(v, tank, target, at_distance=1.), 0.)
+
+    def test_artillery_has_minimum_range_and_disabled_defense_no_damage(self):
+        v = View(snapshot())
+        gun, target = actor(1, 'arty'), actor(2, 'e1')
+        self.assertEqual(damage_rate(v, gun, target, at_distance=2.), 0.)
+        self.assertGreater(damage_rate(v, gun, target, at_distance=10.), 0.)
+        tower = actor(3, 'tsla', powered=False)
+        self.assertEqual(damage_rate(v, tower, target), 0.)
+
+    def test_distant_reinforcements_do_not_immediately_win_local_fight(self):
+        v = View(snapshot())
+        close = [actor(i, '1tnk', 30, 30) for i in range(1, 4)]
+        distant = [actor(i, '3tnk', 90, 90) for i in range(10, 30)]
+        enemy = [actor(i, '3tnk', 35, 30) for i in range(40, 45)]
+        self.assertLess(force_ratio(v, close + distant, enemy), .8)
+
+    def test_projected_tower_counterfire_prevents_false_safe_assault(self):
+        v = View(snapshot())
+        tanks = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+        towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
+        self.assertGreater(force_ratio(v, tanks, towers, horizon=30), 1.)
+        self.assertLess(force_ratio(v, tanks, towers, horizon=30, projected=True), .6)
+
+    def test_projected_tower_does_not_gain_range_against_artillery(self):
+        v = View(snapshot())
+        guns = [actor(i, 'arty', 30, 30) for i in range(1, 7)]
+        towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
+        self.assertGreater(force_ratio(v, guns, towers, horizon=30, projected=True), 5.)
+
+
+class RoleControlTests(unittest.TestCase):
+    def test_main_army_stands_off_known_tower_wall_before_entering_range(self):
+        own = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+        towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
+        v = View(snapshot(300, units=own, enemy_buildings=towers))
+        orders = Military().propose(v)
+        advances = [i.order for i in orders if i.order['cmd'] == 'attack_move']
+        self.assertTrue(advances)
+        self.assertTrue(all(i['to'][0] <= 40 for i in advances))
+
+    def test_small_raid_does_not_recall_entire_main_army(self):
+        own = [actor(i, '1tnk', 15 + i % 3, 14) for i in range(1, 16)]
+        foe = actor(100, 'e1', 19, 14)
+        v = View(snapshot(300, units=own, buildings=[actor(90, 'proc', 12, 12)], enemies=[foe]))
+        orders, defending = Military()._defense(v, own, [foe])
+        self.assertGreater(len(defending), 0)
+        self.assertLess(len(defending), 5)
+        self.assertTrue(orders)
+
+    def test_local_fire_assigns_suitable_targets_and_never_chases(self):
+        own = [actor(1, 'e1', 20, 20), actor(2, 'e3', 20, 21)]
+        enemies = [actor(100, 'e1', 24, 20), actor(101, '3tnk', 24, 21), actor(102, 'e1', 80, 80)]
+        v = View(snapshot(300, units=own, enemies=enemies))
+        orders, _ = Military()._local_fire(v, own, enemies)
+        assignments = {uid: i.order['target'] for i in orders for uid in i.order['units']}
+        self.assertEqual(assignments[1], 100)
+        self.assertEqual(assignments[2], 101)
+        self.assertNotIn(102, assignments.values())
+        self.assertTrue(all(validate_order(i.order, v) is not None for i in orders))
+
+    def test_focus_group_over_fifty_is_not_silently_truncated(self):
+        own = [actor(i, '1tnk', 30, 30) for i in range(1, 76)]
+        enemies = [actor(100, '3tnk', 34, 30)]
+        v = View(snapshot(300, units=own, enemies=enemies))
+        orders, engaged = Military()._local_fire(v, own, enemies)
+        assigned = {uid for i in orders for uid in i.order['units']}
+        self.assertEqual(assigned, {a['id'] for a in own})
+        self.assertEqual(assigned, engaged)
+
+    def test_slow_trapped_units_trade_instead_of_running_from_faster_enemy(self):
+        own = [actor(1, 'e3', 30, 30), actor(2, 'e3', 30, 31)]
+        enemies = [actor(100, '1tnk', 33, 30), actor(101, '1tnk', 33, 31)]
+        v = View(snapshot(300, units=own, enemies=enemies))
+        military = Military()
+        military.retreat_until = 310
+        military.withdraw_goal = (12, 12)
+        orders = military._withdraw(v, own, enemies)
+        self.assertTrue(any(i.order['cmd'] == 'attack' for i in orders))
+        self.assertFalse(any(i.order['cmd'] == 'move' for i in orders))
+
+    def test_fast_tanks_can_disengage_without_attack_overriding_move(self):
+        own = [actor(1, '1tnk', 30, 30)]
+        enemies = [actor(100, '3tnk', 33, 30)]
+        v = View(snapshot(300, units=own, enemies=enemies))
+        orders = Military()._withdraw(v, own, enemies)
+        self.assertTrue(any(i.order['cmd'] == 'move' for i in orders))
+        self.assertFalse(any(i.order['cmd'] == 'attack' for i in orders))
+
+    def test_remembered_contact_cannot_generate_hidden_id_attack(self):
+        own = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+        tower = actor(100, 'tsla', 50, 30)
+        military = Military()
+        military.propose(View(snapshot(300, units=own, enemy_buildings=[tower])))
+        view = View(snapshot(310, units=own))
+        orders = military.propose(view)
+        self.assertIn(100, military.contacts)
+        self.assertFalse(any(i.order.get('target') == 100 for i in orders))
+        self.assertTrue(all(validate_order(i.order, view) is not None for i in orders))
+
+    def test_mobile_memory_expires_without_a_new_sighting(self):
+        own = [actor(1, '1tnk', 30, 30)]
+        enemy = actor(100, '3tnk', 50, 30)
+        military = Military()
+        military._remember(View(snapshot(300, units=own, enemies=[enemy])), own)
+        military._remember(View(snapshot(326, units=own)), own)
+        self.assertNotIn(100, military.contacts)
+
+    def test_pending_focus_fire_survives_idle_observation_during_engine_apply(self):
+        own = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+        enemies = [actor(100, 'e1', 34, 30)]
+        military = Military()
+        first = military.propose(View(snapshot(300, units=own, enemies=enemies)))
+        military.mark_sent([i.order for i in first], 300)
+        # Fresh tick, but the server has not yet applied the pending attack.
+        later = military.propose(View(snapshot(300.25, units=own, enemies=enemies)))
+        self.assertFalse(any(i.order['cmd'] in {'move', 'attack_move', 'attack'} for i in later))
+
+    def test_busy_focus_fire_is_not_cancelled_by_macro_order(self):
+        own = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+        enemies = [actor(100, 'e1', 34, 30)]
+        military = Military()
+        first = military.propose(View(snapshot(300, units=own, enemies=enemies)))
+        military.mark_sent([i.order for i in first], 300)
+        for a in own:
+            a.update(idle=False, act='Attack')
+        later = military.propose(View(snapshot(303, units=own, enemies=enemies)))
+        self.assertFalse(any(i.order['cmd'] in {'move', 'attack_move', 'attack'} for i in later))
+
+    def test_unsupported_artillery_withdraws_when_a_tank_closes(self):
+        own = [actor(1, 'arty', 30, 30)]
+        foe = actor(100, '1tnk', 35, 30)
+        v = View(snapshot(300, units=own, enemies=[foe]))
+        orders, _ = Military()._support(v, own, (60, 30), [foe])
+        self.assertTrue(any(i.order['cmd'] == 'move' for i in orders))
+        self.assertFalse(any(i.order['cmd'] == 'attack' for i in orders))
+
+    def test_artillery_keeps_firing_from_range_instead_of_walking_into_target(self):
+        own = [actor(1, 'arty', 30, 30), actor(2, '2tnk', 35, 30)]
+        foe = actor(100, 'pbox', 40, 30)
+        v = View(snapshot(300, units=own, enemy_buildings=[foe]))
+        orders, ids = Military()._support(v, own, (40, 30), [foe])
+        self.assertEqual(ids, {1})
+        self.assertTrue(any(i.order['cmd'] == 'attack' and i.order['target'] == 100 for i in orders))
+        self.assertFalse(any(i.order['cmd'] == 'move' for i in orders))
+
+
+if __name__ == '__main__':
+    unittest.main()

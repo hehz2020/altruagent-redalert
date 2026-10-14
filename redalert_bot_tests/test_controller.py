@@ -209,7 +209,8 @@ class EconomyTimeline:
                     raise AssertionError(f"Duplicate production into occupied queue: {o}")
                 duration = FALLBACKS[item].get("build_time_s", 20)
                 self.queues[queue] = {"item": item, "queue": queue, "progress": 0,
-                                      "ready": False, "duration": duration}
+                                      "ready": False, "duration": duration,
+                                      "count": o.get("count", 1)}
                 self.history.append((self.tick / 25, cmd, item))
             elif cmd == "place":
                 queue = FALLBACKS[o["item"]]["queue"]
@@ -236,7 +237,11 @@ class EconomyTimeline:
                     q["ready"] = True
                 else:
                     self.units.append(self.new_actor(q["item"]))
-                    del self.queues[key]
+                    q["count"] -= 1
+                    if q["count"]:
+                        q["progress"] = 0
+                    else:
+                        del self.queues[key]
 
 
 class TimelineTests(unittest.TestCase):

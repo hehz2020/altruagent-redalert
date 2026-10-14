@@ -1,0 +1,8 @@
+# Direct dependencies pinned; the exact resolved full environment is included
+# in each release's build-info.json. Python is pinned by the Actions workflow.
+pyinstaller==6.22.3
+httpx==0.28.1
+mcp==1.30.0
+python-dotenv==1.2.4
+socksio==1.0.0
+pytest==9.1.1

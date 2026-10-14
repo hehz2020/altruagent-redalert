@@ -164,10 +164,28 @@ class View:
     def count(self, item: str) -> int:
         return sum(str(a.get("type", "")).lower() == item.lower() for a in self.units + self.buildings)
 
+    def production_count(self, item: str) -> int:
+        """Support both one row per queued unit and aggregate-count servers."""
+        return sum(max(1, int(number(p.get("count", 1), 1)))
+                   for p in self.production
+                   if str(p.get("item", "")).lower() == item.lower())
+
+    def ready_to_place(self) -> set[str]:
+        """Only structures can be placed; an explicit legal list is final.
+
+        A ready vehicle can be temporarily blocked at the factory exit. It
+        still spawns automatically and is never a place-building command.
+        """
+        if isinstance(self.legal.get("place"), list):
+            return {item for item in _names(self.legal["place"])
+                    if not self.queue(item) or self.queue(item).lower() in {"building", "defense"}}
+        return {str(p.get("item", "")).lower() for p in self.production
+                if p.get("ready") and str(p.get("queue", self.queue(str(p.get("item", ""))))).lower()
+                in {"building", "defense"}}
+
     def total(self, item: str) -> int:
         item = item.lower()
-        queued = sum(max(1, int(number(p.get("count", 1), 1)))
-                     for p in self.production if str(p.get("item", "")).lower() == item)
+        queued = self.production_count(item)
         pending = sum(max(1, int(number(o.get("count", 1), 1)))
                       for o in self.pending_orders if o.get("cmd") in ("build", "train")
                       and str(o.get("item", "")).lower() == item)

@@ -1,56 +1,80 @@
-AltruAgent Red Alert Bot v0.1 — validation record
-Date: 2026-10-13 (America/Los_Angeles)
+AltruAgent Red Alert Bot v2 — validation record
+Date: 2026-10-14
 
-Status: runnable SDK integration baseline; NOT live-match verified.
+Status: implementation and offline regression checks passed.
+New-version competitive win rate has NOT been measured.
 
-Reference SDK commit:
-951f4f74b008c6aa7f40bec09e741aa67d3c45cc
+Final local integration command:
+  python -m pytest tests redalert_bot_tests windows/tests -q
+Result: 866 passed, 4 subtests passed (7.84 seconds).
+Environment: Linux, Python 3.12.14, mcp 1.30.0, httpx 0.28.1.
+41 warnings are upstream streamablehttp_client deprecation warnings.
 
-Environment:
-Python 3.12; official altruagent-starter installed in an isolated virtualenv.
-Resolved principal dependencies: mcp 1.30.0, httpx 0.28.1.
-Policy core uses Python standard library only.
+Scope:
+- Official SDK regression suite, agent lifecycle, adapter and logging.
+- Authoritative visibility/ownership/legal actions and order limits.
+- Pending production batches, partial reflection, cancellations and bounded recovery.
+- Ready vehicles never becoming building-placement commands.
+- Batch queue budget, last-harvester-loss recovery and MCV/refinery expansion.
+- Weapon/armor estimates, large-army focus groups, road/beach cleanup paths,
+  exposed artillery withdrawal, projected static-defense counterfire.
+- Persistent MCP: real SDK with HTTP mock, one initialize/schema per session,
+  auth refresh, ambiguous action response not replayed, later reconnection,
+  timeouts, clean shutdown and multiprocessing spawn.
+- Launcher selection, key handling and offline spawned-worker validation.
 
-Offline test suite: 36 tests PASSED.
-Command after extracting into the starter project root:
-python -m unittest discover -s redalert_bot_tests -v
+Independent review found and fixed:
+1. More than 50 focus-fire units were marked assigned but not all commanded.
+2. Cleanup reachability omitted roads/bridges and beaches.
+3. Last-harvester loss could leave unaffordable combat production blocking recovery.
+4. Expansion-site spacing disagreed with follow-up refinery coverage.
+5. Prospective attacks underestimated stationary defenses until already in range.
+6. Missing wait_for_update wording failed to trigger legacy polling fallback.
+7. During engine application delay, macro movement could overwrite focus fire.
 
-Coverage:
-- SDK factory, state/config forwarding, WAIT and result callbacks.
-- Lazy delegation of non-Red-Alert actions and messages.
-- Optional player-view logging, filtering, permissions, I/O failure behavior.
-- MCV deployment followed by refreshed construction-yard state.
-- Pending, delayed, rejected and lost order handling; production deduplication.
-- Authoritative player ownership, current enemy visibility, wreck exclusion.
-- Playable map bounds; 20-order, 50-unit, 200-expanded-command batch caps.
-- Initial branches for Allied/Soviet and short/long map economy openings.
-- Simplified delayed-application economy timeline reaches factory and vehicles.
-- Recovery when the only harvester, or yard and harvester, have been lost.
-- Finished building placement near the clock limit; no countdown suicide.
+Old-trace audit (four seat logs, two historical self-play games):
+176 nonterminal authorized player snapshots; v2 integration checkpoint generated
+610 orders with zero local validation failures, zero batch-limit violations,
+and zero immediate production-budget overcommit.
+Fresh controller per snapshot; median cold decision 158.984 ms, p95 179.728 ms,
+maximum 226.751 ms. This includes rebuilding the static-map cache every time.
+159 proposed training orders: mean batch 2.31, maximum 10.
+Later recovery/static-defense fixes have separate regression coverage above.
 
-Additional real-SDK runner check: PASSED.
-The unchanged official run_game loop processed this adapter through:
-deploy -> immediate pending response -> refreshed state -> build -> terminal.
-This check used a scripted fake MCP session, not a remote game server.
+This is counterfactual snapshot validation: new actions were not applied to a
+live engine, old action feedback was removed, and no win rate can be computed.
+The old games used the previous bot on both seats and are not independent
+opponent-strength evidence. Logs and account details are not published.
 
-Local policy timing, synthetic observation:
-80 own units, 24 visible enemy units, 500 decisions.
-Median 4.945 ms; p95 5.662 ms; maximum 7.627 ms.
-These figures exclude network, server execution and real terrain/pathfinding.
-They are not a live actions-per-second or win-rate measurement.
+Local launcher self-test:
+  python -m windows.entry --self-test --no-pause
+PASS: controller, dynamic imports, certificates, spawned worker, real SDK
+persistent MCP over a local HTTP mock: 1 initialize, 1 HTTP client, 2 calls,
+and clean closure. This local run is Linux/unfrozen.
 
-Manual combat smoke checks:
-Utility-unit exclusion, proposal versus sent-command memory, aircraft retreat,
-visible surviving MCV pursuit, hidden MCV not treated as currently visible.
+Windows publication gate:
+The GitHub Actions workflow builds with Python 3.12.10 x64 and pinned direct
+dependencies. It runs the full suite and the ACTUAL frozen EXE's --self-test,
+including a spawned worker and persistent-MCP mock requests, before publishing.
+Each release's self-test.json and build-info.json are the authoritative record
+of the Windows run, exact source commit, resolved versions and executable hash.
+The policy test command above and this publication gate use no live key.
 
-Known unverified conditions:
-Actual deployment game_config and engine version; real building placement,
-pathfinding, unit damage/range interactions, opponent strategies, win rate,
-network outage behavior, competition registration/submission status.
+Original portable package provenance:
+At the time the original portable package was built, the GitHub connection
+returned HTTP 403 "Resource not accessible by integration" for both source-only
+and workflow-containing tree writes; those attempts changed no remote branch.
+That package used a native Windows launcher, official embedded Python and Windows
+wheels. The build environment could not run Wine's required IPC sockets, so its
+validation covered static PE checks and source Python behavior, not native
+Windows or frozen-runtime execution. Its build metadata records these limits
+and exact source and dependency hashes. For any subsequently published release,
+consult that release's build-info.json and self-test.json for its own validation
+results; the earlier portable checks do not establish a Windows CI result.
 
-No user account was connected, no test match was created, no source repository
-was published or overwritten, and no tournament entry was submitted.
-
-Next validation: run authorized platform Testing matches with the package,
-record official outcomes and optional local logs, then tune before the
-applicable submission lock. See README_REDALERT_ZH.md.
+Limits:
+No new v2 live tournament match, measured network-latency improvement or
+competitive win rate is claimed. Dynamic placement/pathfinding, real opponents,
+platform scheduling and server-specific performance still require live matches.
+Static weapon fallbacks are approximate; actual runtime config takes precedence.
+Source attribution and reference versions: SOURCES.md.

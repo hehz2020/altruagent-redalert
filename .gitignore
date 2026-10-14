@@ -13,6 +13,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+release/
 
 # Virtual environments
 .venv/

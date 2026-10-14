@@ -107,7 +107,14 @@ class AltruAgentClient:
         self.close()
 
     def close(self) -> None:
-        self._http.close()
+        # A game worker owns its own MCP loop/thread. Shut it down before
+        # releasing the control-plane HTTP client and its authentication.
+        from .mcp_transport import close_persistent_sessions
+
+        try:
+            close_persistent_sessions(self)
+        finally:
+            self._http.close()
 
     # -- public API -----------------------------------------------------
 

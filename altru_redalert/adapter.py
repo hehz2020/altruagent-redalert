@@ -31,6 +31,7 @@ _REASONS = frozenset("ok no_feedback pending invalid not_owned wreck is_building
 _ERRORS = frozenset("STALE_STATE NOT_YOUR_TURN INVALID_ACTION RUNTIME_TEMPORARILY_UNAVAILABLE GAME_ALREADY_COMPLETE SESSION_NOT_FOUND AGENT_NOT_IN_SESSION RUNTIME_UNAVAILABLE UNAUTHENTICATED TOO_MANY_WAITS".split())
 _PRIVATE_KEYS = frozenset("headers authorization token access_token refresh_token api_key official_agent_key agent_id player_id players session_id grant seat_grant next_actions".split())
 _CONFIG_FIELDS = frozenset("rules order_schema match_rules maps realtime legal_actions observation_fields results_policy timeouts".split())
+_TIMING_PHASES = frozenset("get_state get_game_config get_legal_actions wait_for_update get_result decision play_action fallback_wait".split())
 
 
 def _public_value(value: Any) -> Any:
@@ -308,6 +309,28 @@ class RedAlertAgent:
         hook = getattr(self._delegate, "on_action_result", None)
         if callable(hook):
             hook(result, context)
+
+    def on_runtime_timing(self, record: dict, context: Any = None) -> None:
+        """Optional SDK diagnostics: durations only, never payloads or keys.
+
+        Paired game time and monotonic wall duration distinguish a slow
+        transport from accelerated simulation or slow policy computation.
+        Logging remains opt-in through REDALERT_LOG_DIR.
+        """
+        game_type = getattr(context, "game_type", None) or self._active_game_type
+        if game_type != "red_alert" or self._replay is None or not isinstance(record, dict):
+            return
+        phase = record.get("phase")
+        if phase not in _TIMING_PHASES:
+            return
+        safe = {"phase": phase}
+        for name in ("elapsed_s", "since_start_s", "game_seconds", "state_version"):
+            value = record.get(name)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+                safe[name] = value
+        if isinstance(record.get("ok"), bool):
+            safe["ok"] = record["ok"]
+        self._replay.write({"type": "timing", **safe})
 
 
 def create_agent() -> RedAlertAgent:
