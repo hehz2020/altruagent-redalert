@@ -77,7 +77,13 @@ def main() -> None:
     environment["PYTHONIOENCODING"] = "utf-8"
     tested = subprocess.run([str(executable), "--self-test", "--no-pause"],
                             cwd=ROOT, env=environment, capture_output=True,
-                            text=True, encoding="utf-8", timeout=90, check=True)
+                            text=True, encoding="utf-8", timeout=90, check=False)
+    if tested.returncode:
+        # The offline self-test has no credentials. Preserve its diagnostics
+        # in CI instead of hiding the actual frozen-runtime failure.
+        print(tested.stdout, end="", flush=True)
+        print(tested.stderr, end="", file=sys.stderr, flush=True)
+        tested.check_returncode()
     report = json.loads(tested.stdout.strip().splitlines()[-1])
     if not report.get("ok") or not report.get("frozen") or report.get("platform") != "win32":
         raise RuntimeError("Frozen Windows self-test failed")
