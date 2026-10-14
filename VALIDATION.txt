@@ -1,0 +1,56 @@
+AltruAgent Red Alert Bot v0.1 — validation record
+Date: 2026-10-13 (America/Los_Angeles)
+
+Status: runnable SDK integration baseline; NOT live-match verified.
+
+Reference SDK commit:
+951f4f74b008c6aa7f40bec09e741aa67d3c45cc
+
+Environment:
+Python 3.12; official altruagent-starter installed in an isolated virtualenv.
+Resolved principal dependencies: mcp 1.30.0, httpx 0.28.1.
+Policy core uses Python standard library only.
+
+Offline test suite: 36 tests PASSED.
+Command after extracting into the starter project root:
+python -m unittest discover -s redalert_bot_tests -v
+
+Coverage:
+- SDK factory, state/config forwarding, WAIT and result callbacks.
+- Lazy delegation of non-Red-Alert actions and messages.
+- Optional player-view logging, filtering, permissions, I/O failure behavior.
+- MCV deployment followed by refreshed construction-yard state.
+- Pending, delayed, rejected and lost order handling; production deduplication.
+- Authoritative player ownership, current enemy visibility, wreck exclusion.
+- Playable map bounds; 20-order, 50-unit, 200-expanded-command batch caps.
+- Initial branches for Allied/Soviet and short/long map economy openings.
+- Simplified delayed-application economy timeline reaches factory and vehicles.
+- Recovery when the only harvester, or yard and harvester, have been lost.
+- Finished building placement near the clock limit; no countdown suicide.
+
+Additional real-SDK runner check: PASSED.
+The unchanged official run_game loop processed this adapter through:
+deploy -> immediate pending response -> refreshed state -> build -> terminal.
+This check used a scripted fake MCP session, not a remote game server.
+
+Local policy timing, synthetic observation:
+80 own units, 24 visible enemy units, 500 decisions.
+Median 4.945 ms; p95 5.662 ms; maximum 7.627 ms.
+These figures exclude network, server execution and real terrain/pathfinding.
+They are not a live actions-per-second or win-rate measurement.
+
+Manual combat smoke checks:
+Utility-unit exclusion, proposal versus sent-command memory, aircraft retreat,
+visible surviving MCV pursuit, hidden MCV not treated as currently visible.
+
+Known unverified conditions:
+Actual deployment game_config and engine version; real building placement,
+pathfinding, unit damage/range interactions, opponent strategies, win rate,
+network outage behavior, competition registration/submission status.
+
+No user account was connected, no test match was created, no source repository
+was published or overwritten, and no tournament entry was submitted.
+
+Next validation: run authorized platform Testing matches with the package,
+record official outcomes and optional local logs, then tune before the
+applicable submission lock. See README_REDALERT_ZH.md.
