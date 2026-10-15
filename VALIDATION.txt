@@ -1,3 +1,39 @@
+AltruAgent Red Alert Bot v2.2 — validation record
+Date: 2026-10-15 UTC (2026-10-14 Pacific)
+
+Full local integration: 907 passed, 10 subtests passed (8.09 seconds).
+Command: python -m pytest tests redalert_bot_tests windows/tests -q
+41 upstream SDK deprecation warnings; no failures.
+Local launcher controller/spawn/persistent-MCP self-test: passed (Linux, unfrozen).
+The release workflow separately tests the actual frozen Windows executable.
+
+New focused regressions cover protected income/technology investment, exact
+heavy-tank affordability, power prerequisites, saving-progress timeouts,
+nearby threats releasing investment, pending orders and full queue budgets;
+retreat commitment through temporary loss of vision; and depleted armies
+failing to extend their attack windows. Emergency harvester tests first failed
+at 300/950/1099 funds on the old code, then passed after protecting unspent
+income savings; successful purchases retain access to their legitimate surplus.
+
+Real local engine development and separate evaluation-map results are recorded
+in BENCHMARK.md. These test the frozen controller through an instrumented local
+build of the platform-observed engine commit. They are not platform tournament
+results, do not include realistic network delay, and cannot establish SOTA.
+Regression counts measure code behavior, not win rate.
+Held-out local comparison: v2.2 3 wins / 5 losses; v2.1 2 wins / 6 losses.
+One paired condition changed from loss to win, seven had the same win/loss outcome.
+This is limited evidence, not a general competitive-strength claim.
+
+Release combat.py SHA-256:
+06068b2e20deca1f1b12fddb747808f03fa802487690dc0303aea0a7fde10810
+Release economy.py SHA-256:
+08f09a1be08a1d44f97af0c9d963b52ce6038f8a008cbfb4f2ff354036e44e86
+
+The user's red-side screenshot is incomplete and not paired to a current
+player log. Reproduced defects are not proof of that screenshot's exact cause.
+
+Historical v2.1 validation record follows (claims below describe that release):
+
 AltruAgent Red Alert Bot v2.1 — validation record
 Date: 2026-10-15 UTC (2026-10-14 Pacific)
 

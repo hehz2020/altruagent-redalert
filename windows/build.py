@@ -116,7 +116,8 @@ def main() -> None:
         archive.write(ROOT / "windows" / "README.txt", "README.txt")
         archive.write(release / "build-info.json", "build-info.json")
         archive.write(release / "self-test.json", "self-test.json")
-        for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "SOURCES.md"):
+        for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "SOURCES.md",
+                     "BENCHMARK.md", "BENCHMARK_RESULTS.json"):
             path = ROOT / name
             if path.is_file():
                 archive.write(path, name)

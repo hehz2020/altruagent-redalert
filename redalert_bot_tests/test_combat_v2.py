@@ -72,6 +72,43 @@ class WeaponMatchupTests(unittest.TestCase):
 
 
 class RoleControlTests(unittest.TestCase):
+    def test_depleted_force_cannot_renew_pressure_commitment(self):
+        for count in (1, 2):
+            with self.subTest(survivors=count):
+                military = Military()
+                army = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
+                first = military.propose(View(snapshot(300, units=army)))
+                self.assertEqual(military.mode, 'pressure')
+                military.mark_sent([i.order for i in first], 300)
+                deadline = military.commit_until
+                for now in range(301, 342):
+                    orders = military.propose(View(snapshot(now, units=army[:count])))
+                    self.assertEqual(military.commit_until, deadline)
+                    if now >= deadline:
+                        self.assertEqual(military.mode, 'regroup')
+                        self.assertFalse(any(i.order.get('to') == [60, 30] for i in orders))
+                    military.mark_sent([i.order for i in orders], now)
+
+    def test_retreat_commitment_survives_fog_and_one_favorable_observation(self):
+        own = [actor(i, '1tnk', 30, 30 + i % 2) for i in range(1, 7)]
+        enemy = [actor(100 + i, '3tnk', 35, 30 + i % 2) for i in range(8)]
+        for later_enemy in ([], [{**enemy[0], 'hp': 1}]):
+            with self.subTest(later_enemy=later_enemy):
+                military = Military()
+                first = military.propose(View(snapshot(300, units=own, enemies=enemy)))
+                self.assertEqual(military.mode, 'retreat')
+                self.assertTrue(any(i.order['cmd'] == 'move' for i in first))
+                military.mark_sent([i.order for i in first], 300)
+                deadline = military.retreat_until
+                for now in (300.2, 303, 306, deadline - .2):
+                    orders = military.propose(View(snapshot(now, units=own, enemies=later_enemy)))
+                    self.assertEqual(military.mode, 'retreat')
+                    self.assertEqual(military.retreat_until, deadline)
+                    self.assertFalse(any(i.order['cmd'] == 'attack_move' for i in orders))
+                    military.mark_sent([i.order for i in orders], now)
+                military.propose(View(snapshot(deadline + .2, units=own)))
+                self.assertNotEqual(military.mode, 'retreat')
+
     def test_air_raid_does_not_recall_ground_only_army(self):
         own = [actor(i, '2tnk', 50 + i % 3, 48 + i // 3) for i in range(1, 10)]
         air = actor(100, 'yak', 18, 13)

@@ -546,8 +546,12 @@ class Military:
             if self.mode != "retreat" or view.now >= self.retreat_until:
                 self.withdraw_goal = self._fallback(view, center, nearby)
             self.retreat_until = max(self.retreat_until, view.now + 9)
-        # Different enter/exit thresholds prevent advance-retreat oscillations.
-        if view.now < self.retreat_until and (nearby and ratio < 1.2):
+        # Finish the committed withdrawal even when pursuers leave current
+        # vision or a single favorable estimate appears. Otherwise fog can
+        # turn the ratio into 10 and replace this move with an advance on the
+        # very next observation. Home defense was already assigned above;
+        # trapped units still return fire through _withdraw.
+        if view.now < self.retreat_until:
             self._set_mode("retreat", view.now)
             return orders + self._withdraw(view, main, nearby)
         self.withdraw_goal = None
@@ -566,8 +570,10 @@ class Military:
             return orders
         total = sum(self._value(view, a) for a in main)
         threshold = 1000 if view.now < 180 else 800
-        ready = ((total >= threshold and len(main) >= 6) or (total >= 1700 and len(main) >= 3)
-                 or (view.now > 360 and len(main) >= 3) or view.now < self.commit_until)
+        enough_force = ((total >= threshold and len(main) >= 6)
+                        or (total >= 1700 and len(main) >= 3)
+                        or (view.now > 360 and len(main) >= 3))
+        ready = enough_force or view.now < self.commit_until
         fire, engaged = self._local_fire(view, [a for a in main if _kind(a) not in ARTILLERY], enemies)
         orders += fire
         guns, gun_ids = self._support(view, main, goal, enemies)
@@ -585,7 +591,10 @@ class Military:
             self._set_mode("regroup", view.now)
             return orders + self._orders(view, movable, "attack_move", center, "assemble", 45)
         self._set_mode("pressure", view.now)
-        self.commit_until = view.now + 20
+        # A depleted force may finish the existing commitment, but cannot
+        # renew it by remaining in pressure or briefly leaving/re-entering it.
+        if enough_force:
+            self.commit_until = view.now + 20
         # Previously seen static defenses survive fog in the risk model only.
         # We never target their IDs or update their hidden health/position.
         resistance = [e for e in enemies if weapons(view, e) and distance(pos(e), goal) < 12]

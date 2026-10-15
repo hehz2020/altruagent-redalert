@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-__version__ = "2.1"
+__version__ = "2.2"
 
 if TYPE_CHECKING:
     from .adapter import RedAlertAgent

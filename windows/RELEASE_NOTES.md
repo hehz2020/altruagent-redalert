@@ -1,8 +1,8 @@
 Download **AltruAgentRedAlert-Windows-x64.zip**, extract it, and run **AltruAgentRedAlert.exe**. Python is included; no separate Python installation is needed.
 
-**Policy v2.1:** retries missing game configuration, refreshes late map data, fixes the vehicle-budget selection gap, prevents aircraft from recalling ground-only defenders, and moves artillery into a verified firing position against visible structures. These corrections have regression coverage; competitive improvement is not yet measured.
+**Policy v2.2:** protects income/technology investment and a three-tank core, completes committed retreats even when pursuers disappear into fog, prevents depleted squads from renewing attacks indefinitely, and keeps emergency harvester savings from leaking into infantry production. It retains the configuration, vehicle-budget and artillery fixes from v2.1. See [BENCHMARK.md](https://github.com/hehz2020/altruagent-redalert/blob/main/BENCHMARK.md) for local engine comparisons, including losses and separate evaluation maps. These are not platform tournament results or proof of a strongest bot.
 
-Finish the current match before stopping the old launcher. Start the new EXE and check that its first line says **Bot v2.1**. Downloading an update does not replace an already running process.
+Finish the current match before stopping the old launcher. Start the new EXE and check that its first line says **Bot v2.2**. Downloading an update does not replace an already running process.
 
 Choose Testing, Tournament, both, or connection check. Enter your own Official Agent Key at the hidden prompt. The executable does not contain credentials and does not save the entered key to disk. An existing private `.env` beside the EXE is also supported.
 

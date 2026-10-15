@@ -1,4 +1,4 @@
-# AltruAgent Red Alert Bot — v2
+# AltruAgent Red Alert Bot — v2.2
 
 A deterministic, self-hosted Red Alert bot for AltruAgent. The Red Alert strategy does not use an LLM or require a model API key. Its independent Python policy adopts ideas from [Spearhead AI](https://github.com/Vintorez91/Spearhead-AI): continuous production, protected economic recovery, resource-oriented expansion, reconnaissance memory and coordinated local combat. It is an adaptation to the platform player interface, not the original native-engine bot. See [sources and attribution](SOURCES.md).
 
@@ -14,7 +14,15 @@ For Testing, select Red Alert and **Mine (self-hosted)** on the platform. Tourna
 
 Get your Official Agent Key from the platform's **Agent Configuration** page. The entered key stays in process memory. An existing private `.env` beside the EXE is also supported. Build metadata records the source, dependency versions and validation environment. A portable build made in Linux has static PE checks and Python logic tests; it is not evidence of an actual Windows runtime test. The native Windows CI release has the additional executable self-test gate described below.
 
-[中文使用与策略说明](README_REDALERT_ZH.md) · [Validation record](VALIDATION.txt)
+[中文使用与策略说明](README_REDALERT_ZH.md) · [Validation record](VALIDATION.txt) · [Local match results](BENCHMARK.md)
+
+v2.2 protects economic development and a three-tank core, completes committed
+withdrawals through temporary loss of enemy vision, stops depleted squads from
+renewing attacks indefinitely, and fixes emergency harvester savings leaking
+into infantry production. The local benchmark includes every development loss
+and a separately selected evaluation set on two other maps. It is not a platform
+tournament win rate or evidence of SOTA. Finish your current game, stop the old
+launcher, and check that the new executable displays **Bot v2.2**.
 
 ## What changed in v2
 

@@ -101,6 +101,56 @@ class Economy:
         self._cadence = 15.0
         self._float_since = None
         self._harvester_retreat = {}
+        self._saving_item = None
+        self._saving_best_budget = 0.0
+        self._saving_progress_at = 0.0
+        self._saving_resume_at = 0.0
+
+    def _development_goal(self, v, budget, critical_danger, vehicles, owned_combat):
+        """Fund the next income/tech step after a small defensive opening.
+
+        Only observed units and available production are used. Existing queues
+        keep running. If funds make no progress for 45 seconds, spend normally
+        for 20 seconds instead of indefinitely withholding all reinforcements.
+        """
+        item = None
+        if not critical_danger and v.has("proc") and v.remaining > 240:
+            if v.total("weap") == 0 and v.total("e1") >= 3 and v.available("weap", "build"):
+                item = "weap"
+            elif v.has("weap") and vehicles >= 1 and owned_combat >= 4:
+                incoming = max(0, v.total("proc") - v.count("proc"))
+                if v.total("harv") + incoming < 2 and v.available("harv", "train"):
+                    item = "harv"
+                elif v.total("proc") < 2 and v.total("harv") >= 2 and v.available("proc", "build"):
+                    item = "proc"
+                elif (v.total("fix") == 0 and v.total("harv") >= 2 and v.now >= 150
+                      and v.available("fix", "build") and _power(v, "fix") is not None):
+                    item = "fix"
+                elif v.has("fix") and v.total("harv") >= 2:
+                    # A technology building is wasted if cheap cars consume
+                    # every income packet before the first real tank is funded.
+                    # Maintain a small three-tank core, then resume normal mix.
+                    core = sum(v.total(x) for x in ("3tnk", "2tnk", "1tnk"))
+                    if core < 3:
+                        item = next((x for x in ("3tnk", "2tnk", "1tnk")
+                                     if v.available(x, "train") and _cost(v, x) > 0), None)
+        if item is None:
+            self._saving_item = None
+            return None
+        if v.now < self._saving_resume_at:
+            return None
+        if item != self._saving_item:
+            self._saving_item = item
+            self._saving_best_budget = budget
+            self._saving_progress_at = v.now
+        elif budget >= self._saving_best_budget + 50:
+            self._saving_best_budget = budget
+            self._saving_progress_at = v.now
+        elif v.now - self._saving_progress_at >= 45:
+            self._saving_resume_at = v.now + 20
+            self._saving_item = None
+            return None
+        return item
 
     def _refresh(self, v):
         # Configuration may arrive after an initial transient MCP failure.
@@ -324,6 +374,8 @@ class Economy:
         air_near = any(e.get("type") in _AIR or v.queue(e.get("type", "")).lower() == "aircraft" for e in near)
         infantry_threat = sum(str(e.get("type", "")).startswith("e") for e in near)
         home_danger = len(near) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in near)
+        close = [e for e in near if any(distance(pos(e), a) <= 10 for a in anchors)]
+        critical_danger = len(close) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in close)
         target = min((pos(e) for e in near), key=lambda p: distance(p, v.base), default=None)
         ready = _ready_buildings(v)
         for item in sorted(ready):
@@ -383,6 +435,14 @@ class Economy:
         mcv_reserve = _cost(v, "mcv") if expansion_due else 0
         budget -= expansion_reserve + mcv_reserve
         budget = max(0, budget)
+        development = self._development_goal(v, budget, critical_danger, vehicles, owned_combat)
+        # Vehicle investment money must survive unrelated building choices.
+        # Building goals remain in budget, so their prerequisite power plant
+        # can be funded before construction rather than locking itself out.
+        development_is_vehicle = development is not None and v.queue(development).lower() == "vehicle"
+        development_vehicle = min(budget, _cost(v, development)) if development_is_vehicle else 0
+        budget -= development_vehicle
+        development_started = False
 
         building, build_priority = None, 80
         if v.has("fact") and not v.queue_busy("Building") and not any(v.queue(x).lower() == "building" for x in ready):
@@ -397,6 +457,8 @@ class Economy:
                 building, build_priority = "proc", 92
             elif not has_barracks:
                 building = barracks
+            elif development in {"weap", "proc", "fix"}:
+                building, build_priority = development, 85
             elif unserved and not home_danger and v.remaining > 160:
                 building, build_priority = "proc", 88
             elif (far and not home_danger and v.total("proc") < 2 and v.total("weap") == 0
@@ -445,8 +507,9 @@ class Economy:
                                               cooldown=1, key=f"build:{building}"))
                         budget -= cost
                         projected_power += min(0, _power(v, building) or 0)
+                        development_started = building == development
 
-        if home_danger and not v.queue_busy("Defense") and v.remaining > 40 and not any(v.queue(x).lower() == "defense" for x in ready):
+        if critical_danger and not v.queue_busy("Defense") and v.remaining > 40 and not any(v.queue(x).lower() == "defense" for x in ready):
             choices = ["sam", "agun"] if air_near else ["gun", "tsla", "pbox", "ftur"] if armor >= 2 else ["pbox", "ftur", "gun", "tsla"]
             existing = sum(v.total(x) for x in ({"sam", "agun"} if air_near else _DEFENSES - {"sam", "agun"}))
             if existing < (2 if len(near) >= 6 else 1):
@@ -462,7 +525,9 @@ class Economy:
 
         # Vehicles get a protected share before infantry consume the remaining
         # cash; an empty vehicle queue should not lose all funds to ten rifles.
-        budget += income_reserve + mcv_reserve
+        budget += income_reserve + mcv_reserve + development_vehicle
+        if development in {"weap", "proc", "fix"} and not development_started:
+            budget = max(0, budget - _cost(v, development))
         vehicle_item, vehicle_priority, vehicle_cap = None, 63, 2
         combat_vehicle_reserve = 250
         if not v.queue_busy("Vehicle") and v.remaining > 25:
@@ -472,6 +537,10 @@ class Economy:
                 vehicle_item, vehicle_priority, vehicle_cap = "mcv", 92, 1
             elif expansion_due:
                 vehicle_item, vehicle_priority, vehicle_cap = "mcv", 84, 1
+            elif development_is_vehicle:
+                if budget >= _cost(v, development):
+                    vehicle_item, vehicle_priority, vehicle_cap = development, 84, 1
+                    combat_vehicle_reserve = 0
             else:
                 goal = min(8, max(1, 2 * v.count("proc"))) if v.count("proc") >= 2 else 1
                 # A refinery already in production supplies a free harvester.
@@ -508,6 +577,12 @@ class Economy:
                 intents.append(Intent(vehicle_order, priority=vehicle_priority, cooldown=.8,
                                       key=f"train:{vehicle_item}"))
                 budget -= n * _cost(v, vehicle_item)
+        if emergency_harvester and not (vehicle_order and vehicle_item == "harv"):
+            # Releasing the reserve for the vehicle attempt is not spending it.
+            # Keep it out of infantry when the replacement is still unaffordable.
+            budget = max(0, budget - income_reserve)
+        if development_is_vehicle and not (vehicle_order and vehicle_item == development):
+            budget = max(0, budget - _cost(v, development))
 
         if not v.queue_busy("Infantry") and v.remaining > 12:
             rifles, rockets = v.total("e1"), v.total("e3")
@@ -525,7 +600,7 @@ class Economy:
             else:
                 item, deficit = None, 0
             if item:
-                saving_factory = (v.total("weap") == 0 and v.has("proc") and rifles >= (2 if not far else 1) and not home_danger)
+                saving_factory = (v.total("weap") == 0 and v.has("proc") and rifles >= (2 if not far else 1) and not critical_danger)
                 reserve = _cost(v, "weap") if saving_factory and not air else 0
                 if (not v.has("fact") and v.total("mcv") == 0 and v.available("mcv", "train")
                         and v.remaining > 180 and not (vehicle_order and vehicle_item == "mcv")):
