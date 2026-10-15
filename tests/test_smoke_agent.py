@@ -1,10 +1,3 @@
-"""Unit tests for examples/smoke_agent.py, built from the exact template shapes
-Agent_ACP's GameAPI emits (gameapi/src/pokemon_adapter/teampreview_mapper.py
-``teampreview_action_schema`` and doubles_action_mapper.py
-``build_doubles_legal_actions``), wrapped the way GameAPI's
-``get_legal_actions`` wraps them (``input["action"]`` is the template).
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -20,7 +13,6 @@ ROSTER = ["Incineroar", "Rillaboom", "Urshifu", "Amoonguss", "Tornadus", "Flutte
 
 
 def _state(*legal: dict) -> GameState:
-    # get_game_state embeds legal_actions in get_legal_actions' own shape.
     return GameState.from_mcp_state(
         {
             "session_id": "s",
@@ -76,7 +68,6 @@ def _decide(*legal: dict):
     return choose_action(_state(*legal), CONTEXT)
 
 
-# -- ordinary actions ------------------------------------------------------------------
 
 
 def test_create_agent_returns_the_decision_function():
@@ -110,7 +101,6 @@ def test_submit_team_is_refused_rather_than_sent_as_a_template():
         _decide(_templated("submit_team", {"type": "submit_team", "team": "Pass a list..."}))
 
 
-# -- Team Preview -------------------------------------------------------------------------
 
 
 def test_select_lineup_brings_first_four_and_leads_first_two():
@@ -121,7 +111,6 @@ def test_select_lineup_brings_first_four_and_leads_first_two():
         "bring": ["Incineroar", "Rillaboom", "Urshifu", "Amoonguss"],
         "leads": ["Incineroar", "Rillaboom"],
     }
-    # The runner passes a dict straight through as the MCP `action` payload.
     assert _validate_decision(decision, _state(_lineup()).legal_actions).action == decision
 
 
@@ -142,7 +131,6 @@ def test_malformed_select_lineup_template_raises(template):
         _decide(_templated("select_lineup", template))
 
 
-# -- doubles turns -------------------------------------------------------------------------
 
 
 def test_normal_two_slot_turn_uses_first_move_per_slot():
@@ -171,7 +159,7 @@ def test_target_prefers_first_positive_over_ally():
     decision = _decide(_doubles([_move("pollenpuff", [-2, 1, 2])], [_move("tackle", [-1, -2])]))
 
     assert decision["slot_0"]["target"] == 1
-    assert decision["slot_1"]["target"] == -1  # no positive target: first listed
+    assert decision["slot_1"]["target"] == -1
 
 
 def test_targetless_move_omits_target():
@@ -214,7 +202,6 @@ def test_two_forced_switches_choose_distinct_reserves():
 
 
 def test_two_forced_switches_one_reserve_switches_once_and_passes():
-    # GameAPI's one-shared-reserve case: both slots offer [switch X, pass].
     decision = _decide(
         _doubles([_switch("Amoonguss"), PASS], [_switch("Amoonguss"), PASS], forced=(True, True))
     )

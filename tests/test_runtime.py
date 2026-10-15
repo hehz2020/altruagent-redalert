@@ -1,12 +1,3 @@
-"""Unit tests for altruagent.runtime (run_once / run_forever).
-
-No real client/network is involved: a FakeClient scripts sessions()
-responses, and run_match itself is replaced with a small stub via
-run_match_fn so match outcomes/failures are fully controlled without
-needing real Match/GameSession machinery (that's covered by
-tests/test_runner.py and tests/test_sessions.py already).
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -30,8 +21,7 @@ def sessions_with_active(*matches: Match) -> AgentSessions:
 
 
 class FakeClient:
-    """Returns each queued AgentSessions in order; repeats the last one
-    once the queue is exhausted, so tests don't need to over-provision."""
+
 
     def __init__(self, *responses: AgentSessions) -> None:
         self._responses = list(responses)
@@ -57,7 +47,6 @@ def make_clock(start: float = 0.0, step: float = 1.0):
     return now
 
 
-# -- run_once: discovery -----------------------------------------------
 
 
 def test_run_once_no_active_sessions_returns_false_without_running_a_match():
@@ -117,7 +106,6 @@ def test_run_once_one_active_match_is_serviced_via_run_match_fn():
     assert run_match_calls == [("s-1", AGENT_ID)]
 
 
-# -- sequential ordering --------------------------------------------------
 
 
 def test_run_once_picks_first_eligible_match_in_server_order():
@@ -135,7 +123,7 @@ def test_run_once_picks_first_eligible_match_in_server_order():
 
     run_once(client, lambda s, c: 0, agent_id=AGENT_ID, failed_until={}, run_match_fn=fake_run_match)
 
-    assert serviced == ["s-1"]  # first in the list, never s-2 in this single call
+    assert serviced == ["s-1"]
 
 
 def test_run_once_skips_match_in_cooldown_for_the_next_eligible_one():
@@ -155,7 +143,7 @@ def test_run_once_skips_match_in_cooldown_for_the_next_eligible_one():
         client,
         lambda s, c: 0,
         agent_id=AGENT_ID,
-        failed_until={"s-1": 1000.0},  # still cooling down
+        failed_until={"s-1": 1000.0},
         now=lambda: 5.0,
         run_match_fn=fake_run_match,
     )
@@ -180,7 +168,6 @@ def test_run_once_returns_false_when_every_active_match_is_in_cooldown():
     assert result is False
 
 
-# -- failure handling / cooldown ------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -209,7 +196,7 @@ def test_match_scoped_errors_do_not_propagate_and_set_cooldown(error):
         run_match_fn=failing_run_match,
     )
 
-    assert result is True  # a match was attempted this tick
+    assert result is True
     assert failed_until["s-1"] == 160.0
 
 
@@ -252,20 +239,14 @@ def test_cooldown_prevents_tight_retry_loop_across_run_forever_ticks():
         max_iterations=5,
     )
 
-    # Serviced (and failed) once, then in cooldown for the remaining ticks —
-    # never retried tightly every single iteration.
     assert len(attempts) == 1
-    # The 4 subsequent ticks found nothing eligible and slept instead.
     assert sleeps == [15.0, 15.0, 15.0, 15.0]
 
 
-# -- run_forever: sequential behavior, no concurrency ---------------------
 
 
 def test_run_forever_services_matches_one_at_a_time_across_ticks():
     m1, m2 = match("s-1"), match("s-2")
-    # Same two active matches on every sessions() call — run_forever must
-    # still only ever run one at a time, never both "concurrently".
     client = FakeClient(sessions_with_active(m1, m2))
     in_flight = {"count": 0}
     max_concurrent = {"seen": 0}
@@ -293,14 +274,11 @@ def test_run_forever_services_matches_one_at_a_time_across_ticks():
     )
 
     assert max_concurrent["seen"] == 1
-    assert serviced_order == ["s-1", "s-1", "s-1", "s-1"]  # s-1 always sorts first; deterministic
+    assert serviced_order == ["s-1", "s-1", "s-1", "s-1"]
 
 
 def test_run_forever_refreshes_sessions_after_each_match_rather_than_reusing_stale_state():
     m1 = match("s-1")
-    # First sessions() call shows s-1 active; second call (after it
-    # finishes) shows nothing active — proving run_forever re-queries
-    # rather than assuming the same match is still there.
     client = FakeClient(sessions_with_active(m1), sessions_with_active())
     calls = []
 
@@ -325,4 +303,4 @@ def test_run_forever_refreshes_sessions_after_each_match_rather_than_reusing_sta
 
     assert calls == ["s-1"]
     assert client.calls == 2
-    assert sleeps == [15.0]  # second tick found nothing, so it slept
+    assert sleeps == [15.0]

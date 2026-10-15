@@ -1,21 +1,3 @@
-"""Plain-language notices for the retired ways of connecting an agent.
-
-AltruAgent now runs on the UCLA tournament site. Every game reaches a
-self-hosted agent through its Official Agent Key
-(``ALTRUAGENT_OFFICIAL_AGENT_KEY``): ``python -m agent --tournament`` plays
-tournament games, ``python -m agent --match`` plays test matches (Testing),
-and both flags together play both. Two older ways of connecting were turned
-off on the platform:
-
-- the platform API-key mode (``ALTRUAGENT_API_KEY``, ``sk_agent_...``,
-  ``/auth/agent/*``), which the platform now answers with HTTP 410
-  ``platform_agents_retired``;
-- Testing claim codes (``--claim seatclaim_...``), answered with HTTP 410
-  ``claim_codes_retired``.
-
-This module has no imports so every other module can use it.
-"""
-
 from __future__ import annotations
 
 AGENT_GUIDE_URL = "https://platform.altruagent-game.com/tournament/agent-guide"

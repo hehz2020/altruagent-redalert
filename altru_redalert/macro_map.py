@@ -1,9 +1,3 @@
-"""Static public-map planning, with no hidden-world or spectator access.
-
-The resource symbols describe the initial map, not current ore amounts. They
-are only siting hints: harvest orders without coordinates let the engine find
-currently available resources. Reachability ignores dynamic actor occupancy.
-"""
 from collections import deque
 from .model import distance, pos
 
@@ -34,8 +28,6 @@ class MacroMap:
             cells, pending = [seed], [seed]
             while pending:
                 x, y = pending.pop()
-                # One-cell gaps belong to the same field, but separate nearby
-                # fields remain separate candidate expansion sites.
                 for dx in range(-2, 3):
                     for dy in range(-2, 3):
                         cell = (x + dx, y + dy)
@@ -64,7 +56,7 @@ class MacroMap:
                 and self.char(point) in {".", ",", "=", "_", "$", "*", "S"})
 
     def distances(self, start):
-        """Cardinal ground reachability is conservative around tight corners."""
+
         start = pos(start)
         if start in self._paths:
             return self._paths[start]
@@ -104,8 +96,6 @@ class MacroMap:
                 continue
             if any(distance(center, p) < 20 for p in threats):
                 continue
-            # Stay on our half until there is a separate offensive-expansion
-            # policy. This is a conservative prior, not knowledge through fog.
             if view.enemy_base and distance(center, view.enemy_base) < distance(center, view.base) + 8:
                 continue
             sites = []
@@ -114,14 +104,8 @@ class MacroMap:
                     cell = (center[0] + dx, center[1] + dy)
                     if not 5 <= distance(cell, center) <= 9 or cell not in paths:
                         continue
-                    # The actual yard site, not only its ore field, must be
-                    # outside existing refinery coverage. Otherwise macro
-                    # could consider this expansion already served and omit
-                    # the follow-up refinery it reserved money to build.
                     if any(distance(cell, anchor) < 18 for anchor in anchors):
                         continue
-                    # Approximate the MCV yard footprint with clearance around
-                    # its center. Actual legality remains the engine's decision.
                     if not all(self.clear((cell[0] + x, cell[1] + y))
                                and (cell[0] + x, cell[1] + y) not in self.resources
                                for x in range(-1, 2) for y in range(-1, 3)):

@@ -1,5 +1,3 @@
-"""Unit tests for altruagent.models."""
-
 from __future__ import annotations
 
 import pytest
@@ -61,7 +59,6 @@ def test_agent_from_dict_tolerates_unknown_extra_fields():
     assert agent.raw["some_future_field"] == {"nested": True}
 
 
-# -- GameState / NextAction -----------------------------------------------
 
 
 def _base_game_state_payload(**overrides):
@@ -104,10 +101,6 @@ def test_game_state_parses_core_fields():
 
 
 def test_game_state_legal_actions_parsing():
-    # REST's separate legal_actions/legal_actions_str int/str lists are
-    # synthesized into LegalAction entries — the same shape MCP's
-    # get_legal_actions returns natively (see from_mcp_state below) — so
-    # contestant code never has to care which transport produced a GameState.
     state = GameState.from_dict(
         _base_game_state_payload(legal_actions=[0, 4, 8], legal_actions_str=["a", "b", "c"])
     )
@@ -127,8 +120,6 @@ def test_game_state_current_player_none_when_not_your_turn():
 
 
 def test_game_state_next_actions_can_have_multiple_entries():
-    # During a messaging round, GameAPI returns both send_message and
-    # terminate_messaging together (see next_actions.py compute_next_actions).
     state = GameState.from_dict(
         _base_game_state_payload(
             messaging_enabled=True,
@@ -144,7 +135,6 @@ def test_game_state_next_actions_can_have_multiple_entries():
     assert all(isinstance(a, NextAction) for a in state.next_actions)
 
 
-# -- messaging (Milestone 5) ----------------------------------------------
 
 
 def test_message_from_dict_parses_all_fields():
@@ -250,7 +240,7 @@ def test_match_from_dict_basic_fields():
     assert match.game_type == "tic_tac_toe"
     assert match.status == "waiting"
     assert match.tournament_id is None
-    assert match.game_server_url is None  # never present on this endpoint's rows
+    assert match.game_server_url is None
 
 
 def test_match_preserves_unknown_extra_fields_in_raw():
@@ -333,7 +323,6 @@ def test_game_state_terminal_with_returns():
     assert [a.action for a in state.next_actions] == ["game_over"]
 
 
-# -- LegalAction / GameState.from_mcp_state (Milestone 6: MCP-first) -------
 
 
 def test_legal_action_from_dict_openspiel_shape():
@@ -347,8 +336,6 @@ def test_legal_action_from_dict_openspiel_shape():
 
 
 def test_legal_action_from_dict_structured_shape():
-    # Pokemon-shaped: action_id is not int-coercible, input carries a richer
-    # structured payload than OpenSpiel-family games ever need.
     action = LegalAction.from_dict(
         {
             "action_id": "move:0",
@@ -393,15 +380,13 @@ def test_game_state_from_mcp_state_parses_generic_fields():
     assert state.is_current_actor is True
     assert state.is_terminal is False
     assert state.current_player.name == "agent-1"
-    # get_game_state alone carries no legal_actions (a separate tool) —
-    # confirmed empty until the runner merges in a get_legal_actions result.
     assert state.legal_actions == []
 
 
 def test_game_state_from_mcp_state_merges_legal_actions_and_its_state_version():
     legal_actions = {
         "session_id": "session-1",
-        "state_version": 4,  # freshest — the one that should win
+        "state_version": 4,
         "actions": [
             {"action_id": "0", "label": "a", "input": {}},
             {"action_id": "1", "label": "b", "input": {}},
@@ -414,8 +399,6 @@ def test_game_state_from_mcp_state_merges_legal_actions_and_its_state_version():
 
 
 def test_game_state_from_mcp_state_merges_result_for_terminal_fields():
-    # get_game_state/play_action never carry returns/termination_reason —
-    # confirmed against openspiel_adapter.py; only get_result/resign do.
     result = {
         "session_id": "session-1",
         "is_terminal": True,
@@ -434,8 +417,6 @@ def test_game_state_from_mcp_state_merges_result_for_terminal_fields():
 
 
 def test_game_state_from_mcp_state_pokemon_shaped_never_reports_messaging():
-    # Confirmed against pokemon_adapter.py: phases are draft/draft_complete/
-    # teambuild/moving, never "messaging" — messaging_enabled is always False.
     state = GameState.from_mcp_state(
         _mcp_state_payload(
             game_type="pokemon_gen9ou_draft",
@@ -475,12 +456,9 @@ def test_game_state_from_mcp_state_new_messages_parsed_as_message_objects():
     assert state.new_messages[0].sender == 1
 
 
-# -- Tournament / TournamentViewer -----------------------------------------
 
 
 def test_tournament_from_dict_list_shape():
-    # GET /tournaments list entries are raw DB rows: no viewer, no
-    # game_server_url (never a stored column).
     tournament = Tournament.from_dict(
         {
             "tournament_id": "t-1",
@@ -505,9 +483,6 @@ def test_tournament_from_dict_list_shape():
 
 
 def test_tournament_from_dict_detail_shape_with_viewer():
-    # GET /tournaments/{id}'s `tournament` sub-object (compactTournament) can
-    # include game_server_url; `viewer` is passed separately (it's a sibling
-    # key in the response body, not nested inside `tournament`).
     tournament = Tournament.from_dict(
         {
             "tournament_id": "t-1",
@@ -565,13 +540,9 @@ def test_tournament_preserves_unknown_fields_in_raw():
 
 
 def test_tournament_has_no_name_attribute():
-    # There is no `name` field anywhere on the backend's tournaments table —
-    # guard against ever accidentally assuming one exists.
     tournament = Tournament.from_dict({"tournament_id": "t-1", "status": "waiting", "name": "Ignored"})
 
     assert not hasattr(tournament, "name")
-    # If a "name" key is ever present in a payload (it shouldn't be), it's
-    # only reachable via raw, never promoted to a typed attribute.
     assert tournament.raw.get("name") == "Ignored"
 
 
@@ -589,7 +560,6 @@ def test_message_from_dict_prefers_platform_seq_over_legacy_index():
     assert Message.from_dict({"index": 2}).index == 2
 
 
-# -- OfficialAssignment ------------------------------------------------------------
 
 
 def test_official_assignment_parses_the_base_fields_only_from_an_older_backend():

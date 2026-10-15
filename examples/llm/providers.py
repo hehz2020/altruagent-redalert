@@ -1,12 +1,3 @@
-"""The model-calling layer for the example LLM agent.
-
-An ``LLMProvider`` has one job: send chat messages and return a JSON object
-that matches a given schema. Game logic never talks to a vendor API
-directly, so adding another provider (Claude, Gemini, a local model) means
-writing one class with ``complete_structured`` and choosing it in
-``provider_from_env`` — nothing else changes.
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,7 +12,7 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 
 
 class ProviderError(RuntimeError):
-    """The model request failed or its reply wasn't a JSON object."""
+    pass
 
 
 class LLMProvider(Protocol):
@@ -30,23 +21,12 @@ class LLMProvider(Protocol):
     def complete_structured(
         self, messages: list[dict], schema_name: str, schema: dict, *, timeout: float | None = None
     ) -> dict:
-        """Return the model's answer as a dict matching ``schema``, or raise
-        ``ProviderError``. ``timeout`` (seconds), when given, bounds this one
-        request: a game with a clock (Pokémon) passes what's left of the
-        decision's time. A provider without the parameter still works; the
-        agent then only limits how many requests it makes.
-        """
+
         ...
 
 
 class OpenAIProvider:
-    """OpenAI Chat Completions with strict structured output, over the
-    starter's existing ``httpx`` dependency (no SDK).
 
-    The API key only ever goes into the Authorization header — never into
-    ``repr``, logs, or error messages (provider error bodies can echo parts
-    of the key, so only the HTTP status is reported).
-    """
 
     def __init__(
         self,
@@ -79,7 +59,6 @@ class OpenAIProvider:
                 "json_schema": {"name": schema_name, "strict": True, "schema": schema},
             },
         }
-        # Only a game with a clock passes a timeout; otherwise the client's own applies.
         extra = {"timeout": timeout} if timeout is not None else {}
         try:
             response = self._http.post("/chat/completions", json=body, **extra)
@@ -103,7 +82,7 @@ class OpenAIProvider:
 
 
 def provider_from_env() -> LLMProvider:
-    """``OPENAI_API_KEY`` (required), ``OPENAI_MODEL``, ``OPENAI_BASE_URL``."""
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set — add it to your environment or the starter's .env.")

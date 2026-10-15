@@ -1,5 +1,3 @@
-"""Console launcher, bundled with Python; no credential is built into the EXE."""
-
 from __future__ import annotations
 
 import argparse
@@ -28,8 +26,6 @@ def valid_key(value: object) -> bool:
 
 
 def application_directory() -> Path:
-    # The portable native launcher supplies this directory while Python runs
-    # from the adjacent runtime folder. PyInstaller does not need this value.
     if os.environ.get("ALTRUAGENT_LAUNCHER_ROOT"):
         return Path(os.environ["ALTRUAGENT_LAUNCHER_ROOT"]).resolve()
     if getattr(sys, "frozen", False):
@@ -38,8 +34,6 @@ def application_directory() -> Path:
 
 
 def configure_environment(root: Path) -> None:
-    # Read only the intentional .env beside the program, never a parent
-    # directory picked by find_dotenv. Never overwrite an inherited setting.
     from dotenv import dotenv_values
 
     env_file = root / ".env"
@@ -49,8 +43,6 @@ def configure_environment(root: Path) -> None:
                 os.environ.setdefault(key, value)
     os.environ.setdefault("ALTRUAGENT_CONTROL_URL", "https://api.altruagent-game.com")
     os.environ.setdefault("ALTRUAGENT_PERSISTENT_MCP", "1")
-    # Per-user writable location also works when the EXE is in a protected
-    # folder. The controller writes only sanitized gameplay observations.
     data_root = Path(os.environ.get("LOCALAPPDATA") or root) / "AltruAgentRedAlert"
     os.environ.setdefault("REDALERT_LOG_DIR", str(data_root / "logs"))
 
@@ -134,8 +126,6 @@ def main(argv: list[str] | None = None) -> int:
         print("\n输入已关闭。请双击程序重新启动。")
         return 1
     except (OSError, RuntimeError) as exc:
-        # Launcher errors contain no entered key; SDK errors are handled by
-        # the official CLI. Do not dump the environment or HTTP headers.
         print(f"\n启动失败：{exc}")
         return 1
     finally:

@@ -1,20 +1,3 @@
-"""Synchronous official-MCP transport, with an optional persistent session.
-
-The compatibility path opens a fresh official SDK connection for each call.
-Set ``ALTRUAGENT_PERSISTENT_MCP=1`` to reuse one connection, MCP handshake,
-and tool-schema cache per client/URL. This matters for real-time games.
-
-A persistent connection lives in a dedicated thread. One coroutine owns its
-async context managers from entry through exit (required by AnyIO's cancel
-scopes), and executes requests sequentially. No asyncio objects cross worker
-processes. ``AltruAgentClient.close()`` closes its sessions and their threads.
-
-Transport failures are returned without replaying a possibly accepted action.
-The next caller reconnects. A rejected HTTP 401 may refresh the client's own
-auth state and retry once; it never creates an independent authentication
-system. Initialization and schema loading occur before any tool mutation.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -36,40 +19,13 @@ from .errors import PlatformError
 if TYPE_CHECKING:
     from .client import AltruAgentClient
 
-# How long one tool call may take. The SDK's own defaults are 30 s to connect
-# and 300 s to read, so a connection that silently died (a Wi-Fi or VPN
-# switch, a laptop waking up) would freeze the agent for five minutes. The
-# longest healthy call is wait_for_update: the server holds it at most 25 s
-# (GameAPI's WAIT_MAX_TIMEOUT_SECONDS), so the read timeout stays well above
-# that plus network time. The session timeout is a backstop for an answer
-# that trickles in without ever finishing. A call that times out raises
-# MCPToolError (no error code), which the runner retries in place.
 MCP_CONNECT_TIMEOUT_SECONDS = 10.0
 MCP_READ_TIMEOUT_SECONDS = 40.0
 MCP_SESSION_TIMEOUT_SECONDS = 45.0
 
 
 class MCPToolError(PlatformError):
-    """A tool call reached the server but failed — either a structured
-    application-level error the tool itself returned (``error_code`` is one
-    of MCP's own codes, e.g. ``STALE_STATE``/``GAME_ALREADY_COMPLETE``), or a
-    protocol/transport-level failure (``error_code`` is ``None`` in that
-    case — including an HTTP-level rejection, surfaced with its
-    ``status_code``).
 
-    ``protocol_error`` is True when the server answered, but with an MCP tool
-    error (``isError``) rather than a result: the tool's arguments failed
-    validation, or the tool itself crashed. GameAPI sends every game error
-    as a normal result with an ``error`` code, so this is a call the server
-    can't handle, likely to fail the same way again. It is not a connection
-    problem (``errors.is_transient_error`` is False for it).
-
-    ``local_error`` is True when the call never left this process: its
-    arguments can't be sent as JSON (for example a numpy number, bytes, or an
-    object of the agent's own class inside a move). Neither a connection nor
-    a server problem; sending the same arguments again fails the same way
-    (``errors.is_transient_error`` is False for it too).
-    """
 
     def __init__(
         self, message: str, *, protocol_error: bool = False, local_error: bool = False, **kwargs: Any
@@ -89,24 +45,17 @@ def _unsendable_arguments(name: str, exc: BaseException) -> MCPToolError:
 
 
 def _check_arguments(name: str, arguments: dict) -> None:
-    """Raise ``MCPToolError(local_error=True)`` if the SDK couldn't send
-    ``arguments``: the same JSON conversion ``ClientSession.call_tool`` does,
-    done before any connection is opened. Inside the SDK that failure would
-    surface wrapped in anyio ExceptionGroups, indistinguishable from a
-    dropped connection.
-    """
+
     try:
         types.CallToolRequestParams(name=name, arguments=arguments).model_dump(
             by_alias=True, mode="json", exclude_none=True
         )
-    except ValueError as exc:  # PydanticSerializationError, UnicodeDecodeError, ValidationError
+    except ValueError as exc:
         raise _unsendable_arguments(name, exc) from exc
 
 
 def _find_serialization_error(exc: BaseException) -> PydanticSerializationError | None:
-    """A ``PydanticSerializationError`` anywhere in anyio's ExceptionGroup
-    wrapping: the SDK failed to turn this call's arguments into JSON (a
-    backstop for ``_check_arguments``)."""
+
     if isinstance(exc, PydanticSerializationError):
         return exc
     for sub in getattr(exc, "exceptions", None) or ():
@@ -122,15 +71,10 @@ async def _call_tool_once(
     headers = {"Authorization": f"Bearer {token}"}
     kwargs: dict[str, Any] = {
         "headers": headers,
-        # The SDK builds httpx.Timeout(timeout, read=sse_read_timeout) from these.
         "timeout": MCP_CONNECT_TIMEOUT_SECONDS,
         "sse_read_timeout": MCP_READ_TIMEOUT_SECONDS,
     }
     if httpx_client_factory is not None:
-        # Test-only seam: lets unit tests exercise the real streamablehttp_client
-        # / ClientSession code paths (JSON-RPC framing, error unwrapping) against
-        # an httpx.MockTransport-backed AsyncClient instead of real sockets,
-        # rather than replacing the SDK's classes with hand-built fakes.
         kwargs["httpx_client_factory"] = httpx_client_factory
     async with streamablehttp_client(mcp_url, **kwargs) as (read, write, _):
         async with ClientSession(
@@ -180,19 +124,7 @@ def _extract_text(result: Any) -> str:
 
 
 def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
-    """Unwrap anyio's ExceptionGroup wrapping.
 
-    Confirmed empirically (not assumed): ``streamablehttp_client`` runs its
-    read/write loops inside ``anyio.create_task_group()``
-    (mcp/client/streamable_http.py), so an HTTP-level failure — including
-    the "Invalid Host header" 421 this module's docstring describes — never
-    arrives as a bare ``httpx.HTTPStatusError``; it's always wrapped in an
-    ``ExceptionGroup``/``BaseExceptionGroup``, one or more levels deep. A
-    plain ``except httpx.HTTPStatusError`` here would silently never match,
-    which would have made the 401-retry-once behavior in ``call_tool`` dead
-    code — probed directly against a real ``httpx.MockTransport`` before
-    trusting this, not inferred from documentation.
-    """
     if isinstance(exc, httpx.HTTPStatusError):
         return exc
     for sub in getattr(exc, "exceptions", None) or ():
@@ -203,23 +135,7 @@ def _find_http_status_error(exc: BaseException) -> httpx.HTTPStatusError | None:
 
 
 def _wrap_http_status_error(name: str, exc: httpx.HTTPStatusError) -> MCPToolError:
-    """Build a clean ``MCPToolError`` from an HTTP-level failure.
 
-    ``exc.response`` is a *streaming* response: the SDK's own transport
-    (``mcp.client.streamable_http``'s ``stream_within_origin``) calls
-    ``raise_for_status()`` while the response is still open, then closes it
-    via its own ``finally: await response.aclose()`` as this exception
-    unwinds — before it ever reaches ``call_tool()``'s except clause, and
-    without the body ever having been read. Accessing ``.text``/``.content``
-    on a closed, never-read streaming response raises
-    ``httpx.ResponseNotRead`` — confirmed empirically (a real 421/401
-    response body is fully drained by the time it gets here) — which would
-    otherwise mask the original HTTP status behind an unrelated crash. We
-    have no way to read the body earlier (that would mean patching the SDK's
-    own transport), so fall back to ``str(exc)`` instead: httpx's own
-    ``HTTPStatusError`` message already includes the status code, reason
-    phrase, and URL, which is enough to act on even without the body.
-    """
     try:
         body = exc.response.text
         detail = body[:500] if body else str(exc)
@@ -241,7 +157,7 @@ class _ToolRequest:
 
 
 class _PersistentCallFailure(Exception):
-    """Carry an SDK failure without discarding whether an action was sent."""
+
 
     def __init__(self, cause: BaseException, *, tool_started: bool) -> None:
         super().__init__(type(cause).__name__)
@@ -254,9 +170,6 @@ class _PersistentCallFailure(Exception):
             return False
         if not self.tool_started:
             return True
-        # A 401 for the actual tool POST rejects that action. A 401 in an
-        # unrelated GET/notification/schema request does not prove that an
-        # in-flight action was rejected, so it must never cause a replay.
         try:
             request = error.request
             body = json.loads(request.content)
@@ -266,12 +179,7 @@ class _PersistentCallFailure(Exception):
 
 
 class _PersistentSession:
-    """One SDK owner task, in one private loop, for this client and URL.
 
-    This deliberately does not enter a context manager through one
-    ``run_coroutine_threadsafe`` call and exit it through another: those
-    calls would run in different tasks and corrupt AnyIO's cancel scopes.
-    """
 
     def __init__(self, url: str, httpx_client_factory=None) -> None:
         self.url = url
@@ -293,7 +201,6 @@ class _PersistentSession:
             raise TimeoutError("MCP session worker did not start")
 
     def _thread_main(self) -> None:
-        # Created here, never at import time or before multiprocessing spawn.
         asyncio.run(self._serve())
 
     async def _serve(self) -> None:
@@ -315,8 +222,6 @@ class _PersistentSession:
                     "headers": {"Authorization": f"Bearer {token}"},
                     "timeout": MCP_CONNECT_TIMEOUT_SECONDS,
                     "sse_read_timeout": MCP_READ_TIMEOUT_SECONDS,
-                    # GameAPI is stateless HTTP. A best-effort DELETE during
-                    # teardown adds no value and can delay shutdown by 40 s.
                     "terminate_on_close": False,
                 }
                 if self.httpx_client_factory is not None:
@@ -328,9 +233,6 @@ class _PersistentSession:
                             read_timeout_seconds=timedelta(seconds=MCP_SESSION_TIMEOUT_SECONDS),
                         ) as session:
                             await session.initialize()
-                            # The SDK otherwise fetches schemas *after* its
-                            # first tool result. Prefetching makes all setup
-                            # failures occur before any possibly mutating call.
                             known_tools: set[str] = set()
                             cursor = None
                             for _ in range(32):
@@ -369,18 +271,16 @@ class _PersistentSession:
                                 if request.token != token:
                                     pending = request
                                     break
-                except Exception as exc:  # SDK task-group errors arrive here after safe scope exit.
+                except Exception as exc:
                     if self._active is not None and not self._active.future.done():
                         self._active.future.set_exception(_PersistentCallFailure(
                             exc, tool_started=self._tool_started,
                         ))
-                    # Never replay the interrupted request. Only a later call
-                    # opens a fresh transport; the runner first reconciles state.
                     pending = None
                     self._active = None
                     self._tool_started = False
         except asyncio.CancelledError:
-            pass  # All SDK context managers have already unwound in this task.
+            pass
         finally:
             failure = _PersistentCallFailure(RuntimeError("MCP session closed"), tool_started=True)
             if self._active is not None and not self._active.future.done():
@@ -393,8 +293,6 @@ class _PersistentSession:
             self._closed = True
 
     def call(self, token: str, name: str, arguments: dict) -> dict:
-        # Public callers are synchronous. Keep requests sequential even if a
-        # user's custom agent happens to call from multiple threads.
         with self._call_lock:
             future: Future = Future()
             with self._state_lock:
@@ -404,8 +302,6 @@ class _PersistentSession:
                     self._queue.put_nowait, _ToolRequest(token, name, arguments, future),
                 )
             try:
-                # Initialization, schema load, and the actual request each
-                # have an SDK timeout. This is also a total wall-time backstop.
                 return future.result(timeout=3 * MCP_SESSION_TIMEOUT_SECONDS + MCP_CONNECT_TIMEOUT_SECONDS + 5)
             except FutureTimeoutError as exc:
                 future.cancel()
@@ -413,8 +309,6 @@ class _PersistentSession:
                 raise _PersistentCallFailure(TimeoutError("MCP request exceeded total timeout"), tool_started=True) from exc
 
     def close(self) -> None:
-        # A fork cannot safely use locks/loops inherited from other threads.
-        # Production uses spawn, but dropping an inherited owner is still safe.
         if self.pid != os.getpid():
             self._closed = True
             return
@@ -435,7 +329,7 @@ _PERSISTENT_CACHE_LOCK = threading.Lock()
 
 
 def close_persistent_sessions(client: "AltruAgentClient") -> None:
-    """Idempotent client-lifecycle cleanup, also useful to standalone callers."""
+
     with _PERSISTENT_CACHE_LOCK:
         sessions = list(getattr(client, "_mcp_persistent_sessions", {}).values())
         client._mcp_persistent_sessions = {}
@@ -478,8 +372,6 @@ def _call_persistent(client: "AltruAgentClient", url: str, name: str, arguments:
                 continue
             http_error = _find_http_status_error(cause)
             if http_error is not None:
-                # Do not echo response bodies, URLs, tokens or SDK exception
-                # reprs into match logs. The status suffices for recovery.
                 raise MCPToolError(
                     f"MCP tool {name!r} request failed with HTTP {http_error.response.status_code}.",
                     status_code=http_error.response.status_code,
@@ -499,17 +391,7 @@ def call_tool(
     *,
     httpx_client_factory=None,
 ) -> dict:
-    """Call one MCP tool and return its parsed result payload as a plain dict.
 
-    ``mcp_url`` is ``{game_server_url}/mcp`` (see ``MCPGameSession``). Raises
-    ``MCPToolError`` (a ``PlatformError`` subclass) for both application-level
-    tool errors and transport/HTTP-level failures, so callers only need one
-    except clause. A 401 triggers exactly one re-login + retry, reusing
-    ``AltruAgentClient``'s own auth state — see the module docstring.
-
-    ``httpx_client_factory`` is a test-only seam (see ``_call_tool_once``) —
-    production callers never pass it.
-    """
     _check_arguments(name, arguments)
     if os.environ.get("ALTRUAGENT_PERSISTENT_MCP", "").strip().lower() in {"1", "true", "yes", "on"}:
         return _call_persistent(client, mcp_url, name, arguments, httpx_client_factory=httpx_client_factory)
@@ -520,12 +402,7 @@ def call_tool(
         )
     except MCPToolError:
         raise
-    except Exception as exc:  # noqa: BLE001 - deliberately broad: network errors,
-        # anyio ExceptionGroups, or any other mcp-SDK-internal failure should
-        # all surface as an AltruAgentError, not a raw third-party exception
-        # leaking out of this SDK. _find_http_status_error unwraps whatever
-        # anyio's task-group wrapping did, so the 401 check below still works
-        # regardless of how many ExceptionGroup layers deep it's nested.
+    except Exception as exc:
         serialization_exc = _find_serialization_error(exc)
         if serialization_exc is not None:
             raise _unsendable_arguments(name, serialization_exc) from exc
@@ -544,7 +421,7 @@ def call_tool(
             )
         except MCPToolError:
             raise
-        except Exception as exc2:  # noqa: BLE001
+        except Exception as exc2:
             http_exc2 = _find_http_status_error(exc2)
             if http_exc2 is not None:
                 raise _wrap_http_status_error(name, http_exc2) from exc2

@@ -1,11 +1,3 @@
-"""RETIRED: listed and inspected platform tournaments as a platform agent,
-which the platform turned off together with the platform API key.
-
-Tournaments are now run on the UCLA tournament site. You register your agent
-on the tournament dashboard, and `python -m agent --tournament` plays its
-tournament games automatically.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -13,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from altruagent.notices import AGENT_GUIDE_URL, DASHBOARD_URL  # noqa: E402
+from altruagent.notices import AGENT_GUIDE_URL, DASHBOARD_URL
 
 
 def main() -> int:

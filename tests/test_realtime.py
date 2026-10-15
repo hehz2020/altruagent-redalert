@@ -1,14 +1,3 @@
-"""Real-time games: the runner's real-time path (altruagent.runner) and the
-example LLM agent's Red Alert player (examples/llm/redalert.py).
-
-Game payloads mirror Agent_ACP GameAPI's Red Alert state (backend/skill/
-redalert.md): ``pacing.mode == "realtime"``, an ``observation`` with units,
-buildings, production and ``available_production``, ``legal_actions`` as a
-dict of short lists (``attack_now``, ``enemy_base``, ...), and a
-``play_action`` answer that carries per-order verdicts but no state. The
-model is always a scripted fake; nothing reaches OpenAI.
-"""
-
 from __future__ import annotations
 
 import json
@@ -80,13 +69,13 @@ def ra_state(tick=100, **extra) -> GameState:
 
 
 def accepted(*rows) -> dict:
-    """A real-time play_action answer: verdicts, no state."""
+
     return {"accepted": True, "session_id": "ra", "status": "in_progress", "pending": True,
             "results": [{"index": i, "cmd": c, "status": s, "reason": r} for i, (c, s, r) in enumerate(rows)]}
 
 
 class RealtimeFakeGame(FakeMCPGameSession):
-    """FakeMCPGameSession plus reasoning_summary and get_game_config."""
+
 
     def __init__(self, config=None):
         super().__init__(session_id="ra")
@@ -108,7 +97,7 @@ class RealtimeFakeGame(FakeMCPGameSession):
 
 
 class Recorder:
-    """An agent object: scripted decisions, records contexts and results."""
+
 
     def __init__(self, *decisions):
         self.decisions = list(decisions)
@@ -130,7 +119,6 @@ def _tool_error(code: str, detail: str = "nope") -> MCPToolError:
     return MCPToolError(f"{code}: {detail}", status_code=None, error_code=code)
 
 
-# -- runner -------------------------------------------------------------------------------
 
 
 def test_wait_in_realtime_waits_for_the_next_view_and_asks_again():
@@ -141,7 +129,6 @@ def test_wait_in_realtime_waits_for_the_next_view_and_asks_again():
     assert game.wait_calls[0]["since_version"] == 100
     assert game.play_action_calls[0]["action"] == ORDERS
     assert game.play_action_calls[0]["state_version"] == 105
-    # A real-time answer carries no state, so the runner re-reads it.
     assert game.get_state_calls == 2
 
 
@@ -201,7 +188,7 @@ def test_game_config_errors_leave_it_unset():
 
 
 class ConfigRetryGame(RealtimeFakeGame):
-    """A real-time stream with independently controlled monotonic time."""
+
 
     def __init__(self, observation_times, *config_results):
         super().__init__()
@@ -252,8 +239,6 @@ def test_missing_game_config_recovers_on_a_later_read_without_replaying_actions(
 
 
 def test_game_config_unknown_tool_retries_with_bounded_frequency_during_dense_updates():
-    # Hundreds of state updates must not become hundreds of config requests.
-    # Attempts are at 0, 5, 15, 35, 65, 95: exponential backoff capped at 30 s.
     times = [i / 10 for i in range(1001)]
     unknown = _tool_error("UNKNOWN_TOOL", "Unknown tool: get_game_config")
     game = ConfigRetryGame(times, *([unknown] * 6))
@@ -265,7 +250,7 @@ def test_game_config_unknown_tool_retries_with_bounded_frequency_during_dense_up
     assert min(intervals) >= GAME_CONFIG_RETRY_FIRST_SECONDS
     assert max(intervals) == GAME_CONFIG_RETRY_MAX_SECONDS
     assert all(c.game_config is None for c in agent.contexts)
-    assert len(logs) == 1  # The unknown tool also cannot flood the console.
+    assert len(logs) == 1
 
 
 def test_supplied_game_config_never_fetches_it_again():
@@ -288,11 +273,10 @@ def test_turn_based_games_never_fetch_the_config():
 
 
 def _placeholder(state, context):
-    return state.legal_actions[0]  # agent/agent.py's choose_action
+    return state.legal_actions[0]
 
 
 def test_the_placeholder_in_red_alert_says_plainly_it_cant_play_it():
-    # Was: "choose_action raised IndexError('list index out of range') ...".
     game = RealtimeFakeGame(CONFIG).queue_state(ra_state(100))
 
     with pytest.raises(DecisionError) as excinfo:
@@ -336,7 +320,7 @@ def test_picking_at_random_from_the_empty_legal_actions_says_it_cant_play_either
     import random
 
     def random_pick(state, context):
-        return random.choice(state.legal_actions)  # IndexError raised inside random.py
+        return random.choice(state.legal_actions)
 
     game = RealtimeFakeGame(CONFIG).queue_state(ra_state(100))
 
@@ -345,8 +329,6 @@ def test_picking_at_random_from_the_empty_legal_actions_says_it_cant_play_either
 
 
 def test_an_unrelated_index_error_in_a_real_red_alert_agent_keeps_the_real_error():
-    # Was: "Your agent can't play Red Alert: ..." for any IndexError, since
-    # Red Alert's legal_actions is always empty; the real error was dropped.
     def own_bug(state, context):
         units = []
         return {"orders": [{"cmd": "stop", "units": [units[0]]}]}
@@ -362,8 +344,6 @@ def test_an_unrelated_index_error_in_a_real_red_alert_agent_keeps_the_real_error
 
 
 def test_an_index_error_in_a_helper_given_legal_actions_keeps_the_real_error():
-    # The line that failed is the helper's own units[0], not a pick from
-    # legal_actions, even though the caller's line names legal_actions.
     def first_unit(legal_actions, units):
         return units[0]
 
@@ -377,7 +357,6 @@ def test_an_index_error_in_a_helper_given_legal_actions_keeps_the_real_error():
 
 
 def test_only_the_expression_that_failed_counts_not_the_rest_of_its_line():
-    # The line names legal_actions, but what failed was units[0].
     def fallback(state, context):
         units = []
         return state.legal_actions[0] if state.legal_actions else {"orders": [{"cmd": "stop", "units": [units[0]]}]}
@@ -395,7 +374,6 @@ def test_an_index_error_in_a_turn_based_game_keeps_the_usual_message():
         run_game(game, RED_ALERT, _placeholder, sleep=lambda s: None)
 
 
-# -- the Red Alert player ---------------------------------------------------------------------
 
 
 class FakeProvider:
@@ -494,7 +472,7 @@ def test_a_provider_error_sends_nothing_and_backs_off():
     player = _player(provider, clock)
     assert player.choose_action(ra_state(), _ctx()) is WAIT
     clock.now += 2
-    assert player.choose_action(ra_state(), _ctx()) is WAIT  # still backing off: no call
+    assert player.choose_action(ra_state(), _ctx()) is WAIT
     assert len(provider.calls) == 1
     clock.now += 4
     assert isinstance(player.choose_action(ra_state(), _ctx()), WithReasoning)
@@ -528,7 +506,7 @@ def test_an_order_refused_three_times_is_blocked_while_the_reason_holds():
         player.choose_action(ra_state(), _ctx())
         player.on_action_result({"error": "INVALID_ACTION", "detail": "[0] deploy: not_owned (unit 7)"}, _ctx())
     move = player.choose_action(ra_state(), _ctx())
-    assert move.action["orders"] == [BUILD_POWR]  # the deploy was dropped
+    assert move.action["orders"] == [BUILD_POWR]
     assert player.orders_blocked == 1
     repeated = provider.view()["orders_refused_repeatedly"]["orders"][0]
     assert repeated["order"] == DEPLOY_GONE and repeated["refused"] == 3 and repeated["blocked"] is True
@@ -550,7 +528,6 @@ def test_the_prompt_stays_under_its_size_limit():
     assert json.loads(text.split("\n")[1])["note"]["entries_not_shown"]["units"] > 0
 
 
-# -- the example LLM agent --------------------------------------------------------------------
 
 
 def test_llm_agent_hands_red_alert_to_its_player_and_forwards_results():
@@ -577,13 +554,10 @@ def test_llm_agent_plays_a_whole_red_alert_match_through_the_runner():
     run_game(game, RED_ALERT, LLMAgent(provider, log=lambda line: None), sleep=lambda s: None)
     assert [c["action"]["orders"][0]["cmd"] for c in game.play_action_calls] == ["deploy", "build"]
     assert game.play_action_calls[0]["reasoning_summary"] == "Build power."
-    assert len(game.wait_calls) == 1  # the empty batch waited for the next view
+    assert len(game.wait_calls) == 1
 
 
 def test_a_temporary_regrant_failure_while_reading_the_config_leaves_it_unset():
-    # get_game_config is best-effort: a seat re-grant that hits a control-plane
-    # hiccup (it arrives as a PlatformError, not an MCPToolError) mustn't end
-    # the game.
     from altruagent.errors import PlatformError
 
     game = RealtimeFakeGame(PlatformError("Request failed with status 503.", status_code=503))

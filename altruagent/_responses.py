@@ -1,8 +1,3 @@
-"""Shared, defensive parsing of platform HTTP responses — used by both the
-control-plane client (``client.py``) and the auth strategies (``auth.py``),
-which can't import each other's module-level helpers without a cycle.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -18,13 +13,7 @@ def _parse_json_body(response: httpx.Response) -> Any:
 
 
 def _parse_error_body(response: httpx.Response) -> dict:
-    """Best-effort parse of an error response body.
 
-    Tolerates the platform's inconsistent error envelopes: a `next_actions`
-    array, a `recovery_action` object instead, a plain `{"error": "..."}`
-    with no `detail`, or a non-JSON body (e.g. an upstream gateway error
-    page), which is captured as text rather than raised.
-    """
     try:
         body = response.json()
     except ValueError:

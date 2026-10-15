@@ -1,10 +1,3 @@
-"""Deterministic macro policy for the documented AltruAgent player interface.
-
-Production runway, protected recovery funds and resource-oriented expansion
-follow the general design of mature RTS bots. This is an independent Python
-implementation; it uses only public static configuration and seat observations.
-No policy is a guarantee of winning: match performance must be measured.
-"""
 from __future__ import annotations
 
 import math
@@ -58,12 +51,7 @@ def _pending(v, cmd, item=None):
 
 
 def _reserved(v):
-    """Reserve unpaid queue tails as well as unresolved production requests.
 
-    A count N entry has one current item at its reported progress, followed by
-    N-1 fully unpaid items. A ready head can still have an unpaid tail. Engines
-    exposing each item separately are handled by count's default of one.
-    """
     amount = 0.0
     for p in v.production:
         item = str(p.get("item", "")).lower()
@@ -76,8 +64,6 @@ def _reserved(v):
 
 
 def _ready_buildings(v):
-    # A present legal.place list, including [], is authoritative. Vehicle
-    # production may briefly be ready before its unit spawns; never place it.
     if isinstance(v.legal.get("place"), list):
         entries = v.legal["place"]
         names = [e if isinstance(e, str) else e.get("item", e.get("type", ""))
@@ -108,22 +94,12 @@ class Economy:
         self._tank_core_established = False
 
     def _development_goal(self, v, budget, critical_danger, vehicles, owned_combat):
-        """Two refineries, fast tank technology, then a concentrated armor core.
 
-        Only observed units and available production are used. Existing queues
-        keep running. If funds make no progress for 45 seconds, spend normally
-        for 20 seconds instead of indefinitely withholding all reinforcements.
-        """
-        # This is an observed opening milestone, not queued or predicted units.
-        # Once achieved, losses must not turn every recovery budget into tanks.
         if sum(v.count(x) for x in ("3tnk", "2tnk", "1tnk")) >= 3:
             self._tank_core_established = True
         item = None
         if not critical_danger and v.has("proc") and v.count("harv") > 0 and v.remaining > 240:
             incoming = max(0, v.total("proc") - v.count("proc"))
-            # The second refinery supplies a second miner without consuming
-            # the future vehicle queue. Do not require a disposable light car
-            # and an infantry wave before investing the opening income.
             if v.total("proc") < 2 and v.available("proc", "build"):
                 item = "proc"
             elif v.total("weap") == 0 and v.available("weap", "build"):
@@ -136,9 +112,6 @@ class Economy:
                     item = "fix"
                 elif v.has("fix") and v.total("harv") >= 2:
                     core = sum(v.total(x) for x in ("3tnk", "2tnk", "1tnk"))
-                    # Three tanks establish a real fighting group. Its next
-                    # reinforcement is an income unit, then another three
-                    # tanks, instead of endlessly recycling cheap infantry.
                     if core >= 3 and v.total("harv") < 4 and v.available("harv", "train"):
                         item = "harv"
                     elif (self._tank_core_established and v.total("e1") < 3
@@ -170,8 +143,6 @@ class Economy:
         return item
 
     def _refresh(self, v):
-        # Configuration may arrive after an initial transient MCP failure.
-        # Rebuild a map made without terrain once the public layout is known.
         layout = v.map_info.get("layout")
         if (self._map is None or self._map_id != v.map_id
                 or self._map_layout != layout or self._map.bounds != v.bounds):
@@ -220,8 +191,6 @@ class Economy:
         norm = math.hypot(dx, dy)
         if norm < 1:
             return None
-        # Hints remain within the yard's local build area. The engine checks
-        # footprint/occupancy and falls back if a dynamic obstruction exists.
         return v.ground_point((round(anchor[0] + 5 * dx / norm), round(anchor[1] + 5 * dy / norm)))
 
     def _deploy(self, v):
@@ -266,8 +235,6 @@ class Economy:
                                              priority=94, cooldown=5, key=f"mcv-expand:{uid}"))
                     continue
             elif v.has("fact"):
-                # Do not deploy an unused expansion vehicle next to the
-                # original yard merely because its route is temporarily unsafe.
                 continue
             previous = self._deploy_attempts.get(uid)
             allowed = not isinstance(deployable, list) or uid in deployable
@@ -321,8 +288,6 @@ class Economy:
         cost, duration = _cost(v, item), _build_time(v, item, "train")
         if cost <= 0 or not v.available(item, "train"):
             return 0
-        # Enough queue runway to bridge observed state gaps, bounded so a new
-        # enemy composition can still change our next production choice.
         runway = horizon if horizon is not None else max(12, min(28, self._cadence * 1.6))
         limit = min(10, max(1, int(_number((v.raw.get("limits") or {}).get("max_train_count"), 10))))
         time_limit = int(max(0, v.remaining - 10) // duration) if math.isfinite(v.remaining) else limit
@@ -331,12 +296,7 @@ class Economy:
                           time_limit))
 
     def _recover_income(self, v):
-        """Unblock an insolvent queue after losing the last harvester.
 
-        Cancel means ONE queued item, not its whole batch. Never budget an
-        anticipated refund or issue the replacement in this same observation.
-        A pending transport outcome must settle before another cancellation.
-        """
         if v.count("harv") or v.remaining <= 50:
             return [], False
         incoming = v.total("harv") > 0 or v.total("proc") > v.count("proc")
@@ -347,8 +307,6 @@ class Economy:
         elif v.has("fact") and v.available("proc", "build"):
             required = _cost(v, "proc")
         elif not v.has("fact") and (v.total("mcv") or v.available("mcv", "train")):
-            # A surviving factory can rebuild the yard, but that is useful
-            # only if a refinery can follow. Preserve a queued MCV below.
             required = _cost(v, "proc") + (0 if v.total("mcv") else _cost(v, "mcv"))
             if v.total("powr") + v.total("apwr") == 0:
                 required += _cost(v, "powr")
@@ -356,8 +314,6 @@ class Economy:
             return [], False
         if v.funds >= _reserved(v) + required:
             return [], False
-        # An unresolved request might itself restore income, or a cancel might
-        # already be removing this very item. Wait for the controller ledger.
         if any(o.get("cmd") in {"build", "train", "cancel"} for o in v.pending_orders):
             return [], True
         candidates = []
@@ -442,7 +398,6 @@ class Economy:
         expansion_due = (expansion is not None and v.total("mcv") == 0 and v.available("mcv", "train")
                          and budget >= _cost(v, "mcv") + _cost(v, "proc") + 300)
         expansion_in_transit = v.has("fact") and v.total("mcv") > 0
-        # Protect the follow-up refinery so an expansion is economically useful.
         expansion_reserve = min(budget, _cost(v, "proc") + 300) if expansion_in_transit or expansion_due else 0
         rebuilding_income = (not v.has("fact") and not v.has("proc") and total_harvs == 0
                              and (v.total("mcv") > 0 or v.available("mcv", "train")))
@@ -453,9 +408,6 @@ class Economy:
         budget -= expansion_reserve + mcv_reserve
         budget = max(0, budget)
         development = self._development_goal(v, budget, critical_danger, vehicles, owned_combat)
-        # Vehicle investment money must survive unrelated building choices.
-        # Building goals remain in budget, so their prerequisite power plant
-        # can be funded before construction rather than locking itself out.
         development_is_vehicle = development is not None and v.queue(development).lower() == "vehicle"
         development_vehicle = min(budget, _cost(v, development)) if development_is_vehicle else 0
         budget -= development_vehicle
@@ -540,8 +492,6 @@ class Economy:
                         budget -= cost
                         break
 
-        # Vehicles get a protected share before infantry consume the remaining
-        # cash; an empty vehicle queue should not lose all funds to ten rifles.
         budget += income_reserve + mcv_reserve + development_vehicle
         if development in {"weap", "proc", "fix"} and not development_started:
             budget = max(0, budget - _cost(v, development))
@@ -559,16 +509,11 @@ class Economy:
                     vehicle_item, vehicle_priority, vehicle_cap = development, 84, 1
                     combat_vehicle_reserve = 0
             elif development == "e1":
-                # The opening armor already existed. Rebuild its three-rifle
-                # screen before filling another vehicle queue with a tank.
                 pass
             elif v.total("fix") > v.count("fix") and not critical_danger:
-                # The first tank is only a few seconds away. A flak truck
-                # here would consume both its cash and the vehicle queue.
                 pass
             else:
                 goal = min(8, max(1, 2 * v.count("proc"))) if v.count("proc") >= 2 else 1
-                # A refinery already in production supplies a free harvester.
                 incoming_refinery_harvs = max(0, v.total("proc") - v.count("proc"))
                 if (total_harvs + incoming_refinery_harvs < goal and v.remaining > 220 and not home_danger
                         and v.available("harv", "train") and budget >= _cost(v, "harv") + 650):
@@ -603,8 +548,6 @@ class Economy:
                                       key=f"train:{vehicle_item}"))
                 budget -= n * _cost(v, vehicle_item)
         if emergency_harvester and not (vehicle_order and vehicle_item == "harv"):
-            # Releasing the reserve for the vehicle attempt is not spending it.
-            # Keep it out of infantry when the replacement is still unaffordable.
             budget = max(0, budget - income_reserve)
         if development_is_vehicle and not (vehicle_order and vehicle_item == development):
             budget = max(0, budget - _cost(v, development))
@@ -634,8 +577,6 @@ class Economy:
                 reserve = _cost(v, "weap") if saving_factory and not air else 0
                 if (not v.has("fact") and v.total("mcv") == 0 and v.available("mcv", "train")
                         and v.remaining > 180 and not (vehicle_order and vehicle_item == "mcv")):
-                    # Without a yard, continually spending spare cash on rifles
-                    # can otherwise prevent an affordable rebuild forever.
                     reserve = max(reserve, _cost(v, "mcv"))
                 n = self._batch(v, item, budget, cap=min(10, deficit), reserve=reserve)
                 if n:

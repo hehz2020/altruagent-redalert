@@ -1,5 +1,3 @@
-"""No-income spending regressions; these tests do not measure win rates."""
-
 import pytest
 
 from altru_redalert.economy import Economy
@@ -7,8 +5,6 @@ from redalert_bot_tests.test_economy_v2 import actor, view
 
 
 def no_income_view(cash, *, production=(), pending=()):
-    # Four surviving rifles but no vehicle: the separate development goal
-    # must not mask the emergency-reserve defect under test.
     return view(cash=cash, units=[actor(i, "e1") for i in range(30, 34)],
                 train=["harv", "e1", "e3"], production=production, pending=pending)
 
@@ -48,8 +44,6 @@ def test_incoming_harvester_reserves_only_its_existing_queue_or_request(producti
     ([], [{"cmd": "build", "item": "proc"}], 2800),
 ])
 def test_existing_refinery_commitment_is_not_reserved_a_second_time(production, pending, cash):
-    # Preserve the frozen policy's existing emergency decision while a refinery
-    # is incoming. This patch fixes reserve leakage, not that separate choice.
     v = no_income_view(cash, production=production, pending=pending)
     assert purchases(v) == [{"cmd": "train", "item": "harv"},
                             {"cmd": "train", "item": "e3"}]

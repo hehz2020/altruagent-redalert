@@ -1,4 +1,3 @@
-"""Regression cases from observed platform behaviour, not win-rate tests."""
 from copy import deepcopy
 
 from altru_redalert.core import Controller, validate_order
@@ -40,8 +39,6 @@ def test_partial_batch_observation_keeps_only_unrepresented_reservation():
     producer = Producer()
     c.economy, c.military = producer, NoMilitary()
     assert orders(c.decide(state(0, train=["e1"])), "train")[0]["count"] == 5
-    # Older servers may expose only the head of the queue. Seeing it must not
-    # drop the reservation for the entire batch and enqueue another five.
     assert not orders(c.decide(state(5, train=["e1"], production=[
         {"queue": "Infantry", "item": "e1", "progress": .1}])), "train")
     assert producer.pending == [{"cmd": "train", "item": "e1", "count": 4}]

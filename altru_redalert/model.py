@@ -1,9 +1,3 @@
-"""Player-view data and small, dependency-free policy primitives.
-
-Fallbacks below come from the platform's public Red Alert guide, read on
-2026-10-13. Runtime game_config overrides them. An unknown cost is zero
-(unknown), never an invented production price.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -92,11 +86,7 @@ class Intent:
 
 
 class View:
-    """Only the authorized raw seat observation and public static config.
 
-    No network, global state, spectator access or cross-match storage.
-    A missing map bound disables coordinate orders instead of guessing.
-    """
 
     def __init__(self, raw: dict, config: dict | None = None,
                  pending_orders: list[dict] | None = None):
@@ -165,17 +155,13 @@ class View:
         return sum(str(a.get("type", "")).lower() == item.lower() for a in self.units + self.buildings)
 
     def production_count(self, item: str) -> int:
-        """Support both one row per queued unit and aggregate-count servers."""
+
         return sum(max(1, int(number(p.get("count", 1), 1)))
                    for p in self.production
                    if str(p.get("item", "")).lower() == item.lower())
 
     def ready_to_place(self) -> set[str]:
-        """Only structures can be placed; an explicit legal list is final.
 
-        A ready vehicle can be temporarily blocked at the factory exit. It
-        still spawns automatically and is never a place-building command.
-        """
         if isinstance(self.legal.get("place"), list):
             return {item for item in _names(self.legal["place"])
                     if not self.queue(item) or self.queue(item).lower() in {"building", "defense"}}
@@ -196,7 +182,6 @@ class View:
 
     def available(self, item: str, kind: str = "train") -> bool:
         item = item.lower()
-        # The authoritative list, even when empty, wins over fallbacks.
         if isinstance(self.legal.get(kind), list):
             return item in _names(self.legal[kind])
         return item in _names(self.obs.get("available_production"))

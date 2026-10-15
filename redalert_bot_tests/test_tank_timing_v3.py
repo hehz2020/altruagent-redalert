@@ -1,4 +1,3 @@
-"""Opening timing boundary checks, not evidence of match strength."""
 from altru_redalert.combat import Military
 from altru_redalert.model import View
 from redalert_bot_tests.test_development_v22 import development_view, purchases

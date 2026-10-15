@@ -1,4 +1,3 @@
-"""Macro regression scenarios; these establish contracts, not RTS win rates."""
 import unittest
 
 from altru_redalert.economy import Economy, _reserved
@@ -81,8 +80,6 @@ class ProductionBudgetTests(unittest.TestCase):
 
     def test_batch_bridges_slow_observations_without_overspending(self):
         v = view(train=["e1", "2tnk"])
-        # Ordinary queue runway after the six-tank development target. During
-        # development the separate strategy deliberately funds one tank.
         v.units.extend(actor(50 + i, "2tnk") for i in range(6))
         result = orders(v, command="train")
         self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
@@ -98,11 +95,7 @@ class ProductionBudgetTests(unittest.TestCase):
         self.assertEqual(orders(v, command="train"), [])
 
     def test_unaffordable_medium_tank_does_not_block_a_light_tank(self):
-        # Previously selection allowed cost + 200, but batching required
-        # cost + 250. The medium tank was selected then silently dropped.
         v = view(cash=1075, train=["2tnk", "1tnk", "e1", "e3"])
-        # Isolate ordinary affordable-unit fallback from development saving,
-        # which intentionally funds a medium tank at its exact 850 price.
         v.units.extend(actor(50 + i, "2tnk") for i in range(6))
         result = orders(v, command="train")
         self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
@@ -141,7 +134,6 @@ class ProductionBudgetTests(unittest.TestCase):
     def test_screened_army_adds_artillery_without_spamming_it(self):
         units = [actor(i, "harv") for i in range(20, 24)]
         units += [actor(i, "e1") for i in range(30, 40)]
-        # Six core tanks now precede normal artillery purchases.
         units += [actor(i, "2tnk") for i in range(50, 56)]
         result = orders(view(units=units, train=["arty", "2tnk"]), command="train")
         self.assertEqual(result, [{"cmd": "train", "item": "arty"}])
@@ -178,11 +170,9 @@ class ProductionBudgetTests(unittest.TestCase):
                  production=[{"queue": "Vehicle", "item": "2tnk", "count": 2, "progress": .3}])
         policy = Economy()
         self.assertEqual(orders(v, policy), [{"cmd": "cancel", "item": "2tnk"}])
-        # One cancellation removes only one tail; no refund is assumed here.
         v.production[0]["count"] = 1
         v.now += 15
         self.assertEqual(orders(v, policy), [{"cmd": "cancel", "item": "2tnk"}])
-        # Only a fresh empty queue allows the replacement harvester order.
         v.production = []
         v.now += 15
         self.assertIn({"cmd": "train", "item": "harv"}, orders(v, policy))
@@ -213,8 +203,6 @@ class ProductionBudgetTests(unittest.TestCase):
                              {"queue": "Vehicle", "item": "2tnk", "count": 2, "progress": 0}])
         v.buildings = [b for b in v.buildings if b["type"] not in {"fact", "proc"}]
         self.assertEqual(orders(v), [{"cmd": "cancel", "item": "2tnk"}])
-        # After safe cancellation finishes, starting a replacement yard must
-        # leave the future refinery's money intact despite legal rifle orders.
         v.production = []
         v.funds = 3700
         result = orders(v, command="train")

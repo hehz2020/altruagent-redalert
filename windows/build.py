@@ -1,5 +1,3 @@
-"""Build, exercise and package a real Windows x64 executable."""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -20,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def license_entries(distributions) -> tuple[list[tuple[Path, str]], list[dict]]:
-    """Read only installed license records, not package data or local config."""
+
     entries: list[tuple[Path, str]] = []
     index: list[dict] = []
     python_license = Path(sys.base_prefix) / "LICENSE.txt"
@@ -32,8 +30,6 @@ def license_entries(distributions) -> tuple[list[tuple[Path, str]], list[dict]]:
         directory = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
         copied = []
         for item in distribution.files or ():
-            # Distribution RECORD identifies the exact files installed by pip.
-            # Limit reads to named license notices under that dist-info folder.
             parts = item.parts
             info_at = next((i for i, part in enumerate(parts) if part.endswith(".dist-info")), None)
             if info_at is None or ".." in parts:
@@ -79,8 +75,6 @@ def main() -> None:
                             cwd=ROOT, env=environment, capture_output=True,
                             text=True, encoding="utf-8", timeout=90, check=False)
     if tested.returncode:
-        # The offline self-test has no credentials. Preserve its diagnostics
-        # in CI instead of hiding the actual frozen-runtime failure.
         print(tested.stdout, end="", flush=True)
         print(tested.stderr, end="", file=sys.stderr, flush=True)
         tested.check_returncode()

@@ -1,4 +1,3 @@
-"""Combo regressions for reachable bounds and unified tower disengagement."""
 import unittest
 
 from altru_redalert.combat import Military
@@ -15,9 +14,6 @@ def mapped(raw, rows=None):
 
 class TankCohesiveTests(unittest.TestCase):
     def test_short_march_follows_route_around_water_instead_of_opposite_bank(self):
-        # A vertical river has its only bridge far south. Euclidean six-cell
-        # bounds point east onto the other bank, while the reachable route
-        # starts south on the current bank.
         rows = ['.' * 96 for _ in range(96)]
         for y in range(4, 45):
             row = list(rows[y - 4])

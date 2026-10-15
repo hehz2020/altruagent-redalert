@@ -1,4 +1,3 @@
-"""Adversarial engine-contract scenarios, with no network or fabricated wins."""
 from copy import deepcopy
 import unittest
 

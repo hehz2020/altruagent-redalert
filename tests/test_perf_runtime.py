@@ -1,4 +1,3 @@
-"""Offline checks for real-time pacing and secret-free phase diagnostics."""
 from __future__ import annotations
 
 import json

@@ -1,19 +1,3 @@
-"""Structured-action adapters for Pokémon's templates.
-
-GameAPI offers Pokémon Team Preview and doubles turns as ONE legal action
-whose ``input["action"]`` describes what to fill in (Agent_ACP gameapi
-``pokemon_adapter/teampreview_mapper.py`` ``teampreview_action_schema`` and
-``pokemon_adapter/doubles_action_mapper.py`` ``build_doubles_legal_actions``).
-These adapters turn each template into a ``Choice``: the model picks from
-the template's own options (roster species; per-slot option indices and
-legal targets), and ``build`` enforces the rules GameAPI would otherwise
-reject — the model never writes the payload itself.
-
-Draft picks need nothing here: they're ordinary legal actions, handled by
-the generic path. Fallbacks are ``examples/smoke_agent.py``'s deterministic
-choice, which also validates the template before any model call.
-"""
-
 from __future__ import annotations
 
 from altruagent import GameState, LegalAction
@@ -23,7 +7,7 @@ from .base import Choice, InvalidChoice, object_schema
 
 
 def lineup_choice(action: LegalAction, state: GameState) -> Choice:
-    fallback = smoke_agent.choose_action(state, None)  # validates the template
+    fallback = smoke_agent.choose_action(state, None)
     template = action.input["action"]
     roster = list(dict.fromkeys(template["roster"]))
     species = {"type": "array", "items": {"type": "string", "enum": roster}}
@@ -45,10 +29,6 @@ def lineup_choice(action: LegalAction, state: GameState) -> Choice:
     )
 
 
-# How each legal target is spelled out to the model. In real play a model
-# reading only the raw ints (-2/-1 own side, 1/2 opponent) attacked its own
-# ally repeatedly, believing -1 was a foe. GameAPI names every target for the
-# acting slot (`target_options`), so the model reads who it is, not a number.
 _TARGET_SIDE = {
     "self": "SELF {species} — this Pokémon itself",
     "ally": "ALLY {species} — your OTHER active Pokémon (legal, but it hits your own side)",
@@ -73,12 +53,7 @@ def _describe_target(target_option: dict) -> str:
 
 
 def _prompt_option(option: dict) -> dict:
-    """A slot option as the model sees it: every legal target named.
 
-    Only the prompt changes — `build` still validates against GameAPI's own
-    numeric `targets`, and the integer is what gets sent back. A server too
-    old to send `target_options` gets the raw ints, as before.
-    """
     target_options = option.get("target_options")
     if option.get("type") != "move" or not isinstance(target_options, list):
         return option
@@ -90,7 +65,7 @@ def _prompt_option(option: dict) -> dict:
 
 
 def doubles_choice(action: LegalAction, state: GameState) -> Choice:
-    fallback = smoke_agent.choose_action(state, None)  # validates the template
+    fallback = smoke_agent.choose_action(state, None)
     template = action.input["action"]
     slots = sorted(template["slots"], key=lambda slot: slot.get("slot", 0))
     options = [slot["options"] for slot in slots]

@@ -1,7 +1,3 @@
-/* Portable Windows x64 launcher. Python and wheels are shipped beside it.
- * No downloader, credentials, registry changes, or installed Python needed.
- * Build: x86_64-w64-mingw32-gcc -municode -O2 -s -static-libgcc ...
- */
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -14,7 +10,6 @@
 #include <wchar.h>
 
 static BOOL WINAPI control_handler(DWORD event) {
-    /* Let the Python child handle Ctrl+C and cleanly close its workers. */
     return event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT;
 }
 

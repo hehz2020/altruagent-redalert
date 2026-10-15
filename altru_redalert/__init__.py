@@ -1,5 +1,3 @@
-"""Scripted Red Alert player; policy modules can be imported without the SDK."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -13,7 +11,7 @@ __all__ = ["RedAlertAgent", "create_agent"]
 
 
 def create_agent() -> RedAlertAgent:
-    """Load the SDK adapter when the official runtime asks for an agent."""
+
     from .adapter import RedAlertAgent
 
     return RedAlertAgent()

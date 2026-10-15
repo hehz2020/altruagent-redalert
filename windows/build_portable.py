@@ -1,8 +1,3 @@
-"""Cross-build a portable Windows launcher with an official Python runtime.
-
-Inputs are already-downloaded official Python/PyPI archives. No Windows
-binary is executed by this builder; build-info explicitly records that limit.
-"""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +26,7 @@ def unpack(archive: zipfile.ZipFile, destination: Path, *, wheel=False) -> None:
             raise RuntimeError("Unsafe archive path")
         if wheel and path.parts[0].endswith(".data"):
             if path.parts[1] not in {"purelib", "platlib"}:
-                continue  # Console scripts and install-time helpers are unused.
+                continue
             path = PurePosixPath(*path.parts[2:])
         target = destination.joinpath(*path.parts)
         target.parent.mkdir(parents=True, exist_ok=True)

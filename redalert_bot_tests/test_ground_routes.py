@@ -1,4 +1,3 @@
-"""Route regressions for the observed isolated-waypoint failure."""
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,7 +12,6 @@ def view(rows, origin=(0, 0), bounds=None, map_id="route-fixture"):
 
 
 def test_isolated_passable_goal_cannot_trap_group_in_nearest_cell_projection():
-    # Same failure class as Sidestep [43,60]: passable rough in an eight-cell cage.
     routes = GroundRoutes(view([".........", ".^^T.....", ".^,T.....",
                                 ".^T^.....", "........."]))
     assert not routes.reachable((7, 2), (2, 2))

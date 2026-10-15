@@ -1,29 +1,3 @@
-"""Authentication strategies — how an ``AltruAgentClient`` obtains the bearer
-token it sends on every control-plane, REST GameAPI, and MCP request.
-
-The client owns the token cache and the platform's one-retry-after-401
-policy (see ``client.py``); a strategy only answers "give me a fresh token
-now". The client calls ``login()`` lazily before the first request and again,
-exactly once, after a 401 — so the retry policy stays in one place, and
-gameplay code (``MCPGameSession``, ``run_game``) never knows which strategy
-is in use.
-
-- ``ApiKeyAuth`` — RETIRED: a platform agent's long-lived ``sk_agent_...``
-  key, exchanged for a JWT via ``POST /auth/agent/login``. The platform turned
-  platform agents off and answers HTTP 410 ``platform_agents_retired``; this
-  strategy then raises ``AuthenticationError`` with a notice pointing to the
-  Official Agent Key.
-- ``SeatGrantAuth`` — RETIRED: one self-hosted Testing seat, claimed with a
-  one-time ``seatclaim_...`` token via
-  ``POST /tournament/agent/test-matches/seats/claim``. Testing now uses the
-  Official Agent Key too, and the platform answers HTTP 410
-  ``claim_codes_retired``, which this strategy reports with the same kind of
-  notice.
-
-Agents connect with ``altruagent.official`` (``OfficialAgentClient``,
-``OfficialSeatAuth``), run by ``python -m agent --tournament``/``--match``.
-"""
-
 from __future__ import annotations
 
 import secrets
@@ -42,20 +16,12 @@ SEAT_CLAIM_TOKEN_PREFIX = "seatclaim_"
 
 class AuthStrategy(Protocol):
     def login(self, http: httpx.Client, control_url: str) -> str:
-        """Obtain a fresh bearer token, or raise ``AuthenticationError``
-        (``PlatformError`` if the control plane can't be reached at all).
-        """
+
         ...
 
 
 class ApiKeyAuth:
-    """RETIRED. A platform agent's API key -> ``POST /auth/agent/login`` -> JWT.
 
-    The platform issues no refresh token, so "renewing" is just logging in
-    again with the same key. The platform now answers 410
-    ``platform_agents_retired``, reported as ``AuthenticationError`` with
-    ``altruagent.notices.PLATFORM_KEY_RETIRED_NOTICE``.
-    """
 
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
@@ -95,24 +61,13 @@ class ApiKeyAuth:
 
 
 class SeatClaimError(AuthenticationError):
-    """Claiming (or renewing) a Testing seat failed. ``error_code`` is the
-    platform's machine code (``invalid_claim_token``, ``seat_already_claimed``,
-    ``claim_expired``, ``match_not_claimable``, ``match_not_ready``,
-    ``rate_limited``, ...) when the platform sent one; the message is already
-    written for a human.
 
-    ``retry_after_seconds`` is the platform's own retry hint, when it sent one
-    (``match_not_ready``: the match's open seats are still being filled).
-    """
 
     def __init__(self, message: str, *, retry_after_seconds: float | None = None, **kwargs) -> None:
         super().__init__(message, **kwargs)
         self.retry_after_seconds = retry_after_seconds
 
 
-# Messages for the platform's documented claim error codes. Deliberately
-# replace the backend's own `detail` rather than echoing it: these are what a
-# contestant sees in their terminal.
 _CLAIM_ERROR_MESSAGES = {
     "invalid_claim_token": (
         "That seat claim token isn't valid. Copy the command for this seat "
@@ -140,7 +95,7 @@ _CLAIM_ERROR_MESSAGES = {
 
 
 def _retry_after_seconds(response: httpx.Response) -> float | None:
-    """The platform's ``retry_after_seconds`` hint, if the body has a usable one."""
+
     try:
         body = response.json()
     except ValueError:
@@ -152,17 +107,7 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
 
 
 class SeatGrantAuth:
-    """RETIRED (the platform answers 410 ``claim_codes_retired``; Testing now
-    uses the Official Agent Key). Authorization for exactly one self-hosted
-    Testing seat.
 
-    Holds the one-time ``claim_token``, a ``claim_key`` generated here (256
-    bits from ``secrets``, never shown, never written anywhere) that stays
-    fixed for this object's lifetime, and the latest ``SeatGrant``. All three
-    live only in memory. Build one per process and never share it: a second
-    ``SeatGrantAuth`` for the same token has a different key, and the
-    platform rejects it with ``seat_already_claimed``.
-    """
 
     def __init__(self, claim_token: str) -> None:
         claim_token = (claim_token or "").strip()
@@ -181,14 +126,11 @@ class SeatGrantAuth:
 
     @property
     def grant(self) -> SeatGrant | None:
-        """The most recent grant, or ``None`` before the first claim."""
+
         return self._grant
 
     def login(self, http: httpx.Client, control_url: str) -> str:
-        """Claim the seat (first call) or renew its authorization (every
-        later call) — the same request either way. One attempt per call; the
-        client's one-retry-after-401 policy decides when to call again.
-        """
+
         renewing = self._grant is not None
         try:
             response = http.post(

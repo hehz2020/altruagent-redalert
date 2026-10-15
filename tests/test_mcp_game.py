@@ -1,12 +1,3 @@
-"""Unit tests for MCPGameSession. call_tool()'s own JSON-RPC/auth/error-
-unwrapping mechanics (built on the official `mcp` SDK client) are fully
-covered in tests/test_mcp_transport.py — these tests only check that
-MCPGameSession's eight methods build the right (tool_name, arguments) pairs
-and parse the right response shape, by monkeypatching
-`altruagent.mcp_game.call_tool` directly rather than re-exercising the real
-async transport here too.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -22,10 +13,7 @@ GAME_SERVER_URL = "http://game.example.test"
 
 
 class FakeClient:
-    """Stand-in for AltruAgentClient — MCPGameSession never calls anything
-    on it directly (call_tool is monkeypatched below), so this only needs
-    to exist as an opaque object to pass through.
-    """
+    pass
 
 
 def make_session(**overrides) -> MCPGameSession:
@@ -61,7 +49,7 @@ def test_get_state_calls_get_game_state_and_parses_generic_state(monkeypatch):
     assert state.session_id == SESSION_ID
     assert state.state_version == 2
     assert state.is_current_actor is True
-    assert state.legal_actions == []  # none embedded in this payload
+    assert state.legal_actions == []
 
 
 def test_get_state_parses_embedded_legal_actions(monkeypatch):
@@ -265,5 +253,5 @@ def test_mcp_game_and_rest_game_from_same_client_are_independent_classes():
 
     assert isinstance(session, MCPGameSession)
     assert isinstance(rest_session, GameSession)
-    assert not hasattr(session, "state")  # MCPGameSession never exposes REST-shaped method names
-    assert not hasattr(rest_session, "get_state")  # nor vice versa
+    assert not hasattr(session, "state")
+    assert not hasattr(rest_session, "get_state")

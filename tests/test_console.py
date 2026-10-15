@@ -1,11 +1,3 @@
-"""Log lines reach the terminal in one write each.
-
-Several worker processes share the runtime's terminal (or a log file). With
-unbuffered output (PYTHONUNBUFFERED=1, ``python -u``), ``print`` writes the
-text and the newline separately, so two processes could glue their lines
-together. Each line, newline included, must be a single write.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -19,7 +11,7 @@ from test_tournament import EXEC, SPEC, FakeOfficial, FakeWorkerOfficial, a
 
 
 class RecordingStream:
-    """A stdout that records every write call separately."""
+
 
     def __init__(self) -> None:
         self.writes: list[str] = []
@@ -58,7 +50,7 @@ def test_the_worker_writes_each_line_at_once(monkeypatch):
     run_tournament_worker(TournamentWorkerInput("seat-1", "match-1", "werewolf", SPEC, EXEC),
                           official_factory=lambda: FakeWorkerOfficial(None), run_game_fn=fake_run_game)
 
-    assert len(stream.writes) >= 2  # starting, finished
+    assert len(stream.writes) >= 2
     assert _every_write_is_one_whole_line(stream.writes)
 
 
@@ -73,5 +65,5 @@ def test_the_supervisor_writes_each_line_at_once_by_default(monkeypatch):
     factory.processes[0].finish(0)
     run_tournament_once(FakeOfficial([]), state, agent_spec=SPEC, now=lambda: 2.0, process_factory=factory)
 
-    assert len(stream.writes) >= 3  # Match assigned, Starting match..., Match finished.
+    assert len(stream.writes) >= 3
     assert _every_write_is_one_whole_line(stream.writes)

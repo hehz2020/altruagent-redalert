@@ -1,5 +1,3 @@
-"""Offline checks run inside the actual Windows EXE before it is released."""
-
 from __future__ import annotations
 
 import multiprocessing
@@ -9,7 +7,7 @@ import sys
 
 
 def _persistent_mcp_check() -> dict:
-    """Run the real MCP SDK/event loop with an entirely mocked HTTP layer."""
+
     import httpx
     from altruagent.client import AltruAgentClient
     from altruagent.mcp_transport import call_tool
@@ -71,8 +69,6 @@ def _persistent_mcp_check() -> dict:
 
 
 def _controller_check() -> dict:
-    # Exercise dynamic agent imports plus the runtime transport dependency
-    # graph. Importing is intentionally offline: no client is authenticated.
     import certifi
     import httpx
     import mcp.client.streamable_http
@@ -110,7 +106,6 @@ def _spawned_check(connection) -> None:
         connection.send({"ok": True, "pid": os.getpid(), **_controller_check(),
                          "persistent_mcp": _persistent_mcp_check()})
     except BaseException as exc:
-        # Offline inputs only; include the class, not arbitrary repr data.
         connection.send({"ok": False, "error_type": type(exc).__name__})
         raise
     finally:

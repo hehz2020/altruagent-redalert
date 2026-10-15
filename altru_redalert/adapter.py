@@ -1,13 +1,3 @@
-"""AltruAgent SDK adapter for the scripted Red Alert controller.
-
-Red Alert does not import or initialize an LLM. Other assigned games are
-delegated lazily to ``REDALERT_OTHER_AGENT`` (``MODULE[:FACTORY]``), whose
-default is the starter's ``examples.llm_agent``. That default needs its own
-model/API-key configuration, but only when a non-Red-Alert game is played.
-Consequently, ``--check-tournament --agent altru_redalert`` does not validate
-the fallback's model credentials: check the chosen fallback separately.
-"""
-
 from __future__ import annotations
 
 import json
@@ -36,7 +26,7 @@ _TIMING_PHASES = frozenset("get_state get_game_config get_legal_actions wait_for
 
 
 def _public_value(value: Any) -> Any:
-    """Copy JSON data, dropping credential/identity keys at every nesting level."""
+
     if isinstance(value, dict):
         return {
             key: _public_value(item)
@@ -115,7 +105,7 @@ def _safe_result(result: Any, *, delayed: bool = False) -> dict:
 
 
 def _safe_state(raw: dict) -> dict:
-    """Whitelist the gameplay snapshot; never serialize grants or identities."""
+
     clean = _known(raw, ("state_version", "phase", "is_current_actor", "is_terminal"))
     clean.update(game_type="red_alert", session_id="replay")
     schemas = {
@@ -163,7 +153,7 @@ def _safe_state(raw: dict) -> dict:
 
 
 class _ReplayLog:
-    """Opt-in private local JSONL; logging failures never interrupt gameplay."""
+
 
     def __init__(self, directory: str) -> None:
         self.directory = directory
@@ -186,7 +176,6 @@ class _ReplayLog:
             self.file.flush()
         except (OSError, TypeError, ValueError) as exc:
             self.disabled = True
-            # Do not echo exception text: it can contain paths or payload data.
             print(f"Red Alert replay logging disabled ({type(exc).__name__}); gameplay continues.", file=sys.stderr)
             self.close()
 
@@ -212,12 +201,7 @@ class _ReplayLog:
 
 
 class RedAlertAgent:
-    """One controller per match, using the starter's existing transport.
 
-    ``controller`` and ``other_agent_spec`` may be supplied for local tests.
-    The public factory uses the normal controller and the environment setting.
-    Delegate errors propagate to the SDK so configuration failures are visible.
-    """
 
     def __init__(
         self,
@@ -239,12 +223,10 @@ class RedAlertAgent:
 
     @property
     def stats(self) -> dict:
-        """The controller's live Red Alert counters."""
+
         return self.controller.stats
 
     def _game_type(self, raw: dict, context: Any) -> str:
-        # Real SDK contexts always name the game. Raw state is a useful
-        # fallback for captured observations and minimal local test contexts.
         game_type = getattr(context, "game_type", None) or raw.get("game_type")
         self._active_game_type = game_type or self._active_game_type
         return self._active_game_type
@@ -267,8 +249,6 @@ class RedAlertAgent:
         delegate = load_agent_factory(spec)()
         if isinstance(delegate, RedAlertAgent):
             raise ValueError("REDALERT_OTHER_AGENT returned another RedAlertAgent.")
-        # Match the SDK contract: a callable object/function takes precedence
-        # over a choose_action method on that same object.
         decision = delegate if callable(delegate) else getattr(delegate, "choose_action", None)
         if not callable(decision):
             raise TypeError(
@@ -293,8 +273,6 @@ class RedAlertAgent:
 
     def choose_message(self, state: Any, context: Any = None) -> Any:
         if self._game_type(state.raw, context) == "red_alert":
-            # Red Alert has no messaging; match the SDK's default if a local
-            # caller nevertheless asks for a message.
             return TERMINATE_MESSAGING
         delegate = self._load_delegate()
         message = getattr(delegate, "choose_message", None)
@@ -307,19 +285,12 @@ class RedAlertAgent:
                 self._replay.write({"type": "result", "result": _safe_result(result)})
             self.controller.on_result(result)
             return
-        # The SDK calls this after choose_action, so the delegate is normally
-        # already loaded. Do not instantiate another-game agent just for a hook.
         hook = getattr(self._delegate, "on_action_result", None)
         if callable(hook):
             hook(result, context)
 
     def on_runtime_timing(self, record: dict, context: Any = None) -> None:
-        """Optional SDK diagnostics: durations only, never payloads or keys.
 
-        Paired game time and monotonic wall duration distinguish a slow
-        transport from accelerated simulation or slow policy computation.
-        Logging remains opt-in through REDALERT_LOG_DIR.
-        """
         game_type = getattr(context, "game_type", None) or self._active_game_type
         if game_type != "red_alert" or self._replay is None or not isinstance(record, dict):
             return
@@ -337,5 +308,5 @@ class RedAlertAgent:
 
 
 def create_agent() -> RedAlertAgent:
-    """Factory accepted by ``python -m agent --agent altru_redalert``."""
+
     return RedAlertAgent()

@@ -1,26 +1,3 @@
-"""Per-match worker process — the child side of Milestone 4C's
-process-per-match concurrency model.
-
-``run_worker`` and ``_process_entry`` must stay top-level, importable
-functions (never a closure/lambda/bound method) — Windows has no ``fork``;
-``multiprocessing``'s ``spawn`` start method launches a genuinely fresh
-Python interpreter for every worker and re-imports this module by name to
-find its target, rather than copying the parent's memory. That's also
-exactly what gives each worker its own isolated module-level state for
-free: a contestant's ``agent.agent`` module is reimported from scratch in
-every worker process, so even careless module-level globals (not just a
-``create_agent()``-returned instance) never leak between matches.
-
-Only primitive, picklable data crosses the process boundary (``WorkerInput``
-below) — confirmed empirically during the 4C design audit that
-``AltruAgentClient``/``GameSession``/a client-attached ``Match`` are not
-picklable (``httpx.Client`` holds a real ``_thread.RLock``), so nothing here
-ever tries to pass one. Each worker builds its own ``AltruAgentClient()``
-from its own inherited environment/`.env` (the same config-loading path
-every other entry point already uses) rather than receiving the API key
-through ``WorkerInput`` at all.
-"""
-
 from __future__ import annotations
 
 import os
@@ -41,41 +18,15 @@ if TYPE_CHECKING:
     from .models import GameState
     from .official import OfficialAgentClient
 
-# The entire parent<->child result-signaling mechanism (see
-# supervisor.py) — no Queue/Pipe is used; a worker always returns one of
-# these via its process exit code. EXIT_MATCH_FAILURE and EXIT_UNEXPECTED
-# both lead to the same cooldown treatment in the supervisor; the
-# distinction exists purely so logs can say which kind of failure occurred.
 EXIT_SUCCESS = 0
 EXIT_MATCH_FAILURE = 1
 EXIT_UNEXPECTED = 2
-# Tournament workers only: another runtime holds this seat's execution lease.
-# The supervisor retries the seat once a lease could have lapsed.
 EXIT_SEAT_BUSY = 3
-# Tournament workers only: a temporary problem (the platform busy, a dropped
-# connection) kept this worker from ever reaching its game. Nothing was
-# played, so the supervisor tries again within seconds while the game's
-# connect window is open: a short hiccup must never become a no-show.
 EXIT_NOT_CONNECTED = 4
-# Tournament workers only: the platform says the event registration isn't
-# complete (for example the Official Rules were updated and must be accepted
-# again). The worker has printed what to do; the supervisor keeps trying.
 EXIT_REGISTRATION_INCOMPLETE = 5
-# Tournament workers only: the worker reached its game, then every call failed
-# for a temporary reason for runner.TRANSIENT_GIVE_UP_SECONDS (a lasting
-# outage or a dropped connection), so the runner gave up. Not the agent's
-# fault: the supervisor picks the game up again soon if it had been playing.
 EXIT_CONNECTION_LOST = 6
-# Tournament workers only: the platform refused the Official Agent Key itself
-# (``official.is_fatal_auth_error``: it was rotated or revoked, or the agent
-# is no longer Self-hosted). No retry can help until the contestant puts the
-# new key in .env and restarts, so the supervisor starts no new workers.
 EXIT_KEY_REFUSED = 7
 
-# Before the game is reached, a temporary failure to get the seat's grant is
-# retried inside the worker (no new process, no new agent): after about 3 s,
-# then 6 s, 12 s, and every 15 s, with jitter, for up to this long. Then the
-# worker exits with EXIT_NOT_CONNECTED and the supervisor starts a new one.
 FIRST_GRANT_RETRY_SECONDS = 60.0
 FIRST_GRANT_RETRY_FIRST_SECONDS = 3.0
 FIRST_GRANT_RETRY_MAX_SECONDS = 15.0
@@ -84,12 +35,7 @@ _MATCH_SCOPED_ERRORS = (DecisionError, UnsupportedGameFlowError, PlatformError)
 
 
 class WorkerInput(NamedTuple):
-    """Primitive, picklable description of one match for a worker process to
-    reconstruct and play — exactly the fields ``DecisionContext`` needs.
-    Deliberately does not include ``control_url``/``api_key``: the worker
-    builds its own client from its own inherited environment instead (see
-    module docstring).
-    """
+
 
     session_id: str
     tournament_id: str | None
@@ -105,27 +51,14 @@ def run_worker(
     agent_module: object | None = None,
     run_match_fn: Callable[..., "GameState"] = _default_run_match,
 ) -> int:
-    """Play exactly one match: build a client, reconstruct its ``Match``,
-    call ``agent.agent.create_agent()`` exactly once, and hand the result to
-    the existing, unmodified ``run_match``.
 
-    Returns an exit code (``EXIT_*`` above) rather than raising — this is
-    what ``_process_entry`` turns into a real process exit code, and it's
-    also why this function is safe and useful to call directly (no real
-    process involved) from tests: every failure path is captured as a
-    return value, never an uncaught exception escaping to the caller.
-
-    ``client_factory``/``match_factory``/``agent_module``/``run_match_fn``
-    all default to the real production pieces; tests override them to avoid
-    any real network call or dependency on a real ``agent/agent.py``.
-    """
     pid = os.getpid()
     print_line(f"[worker pid={pid}] starting session_id={worker_input.session_id}")
 
     client: AltruAgentClient | None = None
     try:
         if agent_module is None:
-            import agent.agent as agent_module  # the contestant's own code
+            import agent.agent as agent_module
 
         create_agent = getattr(agent_module, "create_agent", None)
         if not callable(create_agent):
@@ -154,10 +87,6 @@ def run_worker(
         )
         return EXIT_SUCCESS
     except KeyboardInterrupt:
-        # Windows delivers Ctrl+C to the whole console process group, so
-        # this worker sees it directly too, independent of whether the
-        # parent's own cleanup reaches it in time. Exit quietly — no
-        # traceback, no resign, no further API calls.
         print_line(f"[worker pid={pid}] interrupted, stopping")
         return EXIT_SUCCESS
     except _MATCH_SCOPED_ERRORS as exc:
@@ -165,7 +94,7 @@ def run_worker(
             f"[worker pid={pid}] match failed session_id={worker_input.session_id}: {exc}"
         )
         return EXIT_MATCH_FAILURE
-    except Exception as exc:  # noqa: BLE001 - deliberately broad, see EXIT_UNEXPECTED
+    except Exception as exc:
         print_line(f"[worker pid={pid}] unexpected error: {exc!r}")
         return EXIT_UNEXPECTED
     finally:
@@ -173,10 +102,6 @@ def run_worker(
             client.close()
 
 
-# How a game's last line names this agent's result. The game's own result for
-# this player comes first (Werewolf), then the winner (Pokémon, Red Alert),
-# then the score, read the way the platform reads it: above 0.5 a win, below
-# a loss, exactly 0.5 a draw.
 _OUTCOME_WORDS = {"win": "won", "loss": "lost", "draw": "drew", "resigned": "resigned", "timed_out": "timed out"}
 
 
@@ -193,9 +118,7 @@ def _score(final_state, agent_id: str) -> float | None:
 
 
 def game_outcome(final_state, agent_id: str) -> str | None:
-    """This agent's result in a finished game: ``"won"``, ``"lost"``,
-    ``"drew"``, ``"resigned"``, ``"timed out"``, ``"no result"`` (the server
-    couldn't finish the game), or ``None`` when the server didn't say."""
+
     result = getattr(final_state, "final_result", None) or {}
     structured = result.get("result")
     players = structured.get("seats") if isinstance(structured, dict) else None
@@ -214,9 +137,7 @@ def game_outcome(final_state, agent_id: str) -> str | None:
 
 
 def finished_line(final_state, agent_id: str, seat_position: int | None = None) -> str:
-    """The worker's last line for a game that ended: how this agent did, when
-    the server said, then the technical detail. For example
-    ``finished: your agent (player 2) won (termination_reason=completed, score=1.0)``."""
+
     score = _score(final_state, agent_id)
     detail = f"termination_reason={getattr(final_state, 'termination_reason', None)}" + (
         f", score={score}" if score is not None else "")
@@ -230,26 +151,14 @@ def finished_line(final_state, agent_id: str, seat_position: int | None = None) 
 
 
 class TournamentWorkerInput(NamedTuple):
-    """Primitive, picklable description of one assigned seat (a Testing or
-    tournament game). Carries no credential: the worker reads the Official
-    Agent Key from its own inherited environment/.env, exactly like
-    ``WorkerInput`` above.
-    """
+
 
     seat_id: str
     match_id: str
     game_type: str | None
     agent_spec: str
-    # The supervisor's one execution id, shared by all of its workers (the
-    # seat lease owner). Kept out of repr so it never lands in a log.
     execution_id: str
-    # The assignment's tournament, if the server named one (None for Testing);
-    # handed to the contestant as DecisionContext.tournament_id.
     tournament_id: str | None = None
-    # The supervisor's current agent session token, so the worker needn't
-    # sign in again (each sign-in costs the platform one anonymous sign-in).
-    # Handed over the process pipe only; kept out of repr like execution_id.
-    # None (or an expired one) just means the worker signs in itself.
     agent_session: str | None = None
 
     def __repr__(self) -> str:
@@ -270,26 +179,7 @@ def run_tournament_worker(
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.monotonic,
 ) -> int:
-    """Play one assigned seat: build the contestant from ``agent_spec``
-    (``create_agent()`` exactly once, in this process), request the seat's
-    SeatGrant, and hand the seat to the existing ``run_game`` loop. GameAPI
-    only ever sees the SeatGrant token; renewing it after a 401 re-requests
-    the grant (``OfficialSeatAuth``). While the match runs, a
-    ``SeatLeaseKeeper`` keeps this runtime's execution lease on the seat; if
-    another runtime takes it (``seat_busy``), every further gameplay call is
-    refused and the worker exits with ``EXIT_SEAT_BUSY``. Returns an
-    ``EXIT_*`` code.
 
-    A temporary failure to get the first grant is retried here for up to
-    ``FIRST_GRANT_RETRY_SECONDS`` (``run_game`` retries temporary failures
-    during play itself). A worker that never reached its game because of a
-    temporary problem exits with ``EXIT_NOT_CONNECTED``; one that reached it
-    and then lost the connection for good (``run_game`` gave up on temporary
-    failures) exits with ``EXIT_CONNECTION_LOST``; one refused because the
-    event registration isn't complete exits with
-    ``EXIT_REGISTRATION_INCOMPLETE`` after printing what to do; one whose
-    Official Agent Key the platform refused exits with ``EXIT_KEY_REFUSED``.
-    """
     from .agent_loader import load_agent_factory
     from .models import DecisionContext
     from .official import (
@@ -323,14 +213,14 @@ def run_tournament_worker(
         official = official_factory()
         adopt = getattr(official, "use_session_token", None)
         if worker_input.agent_session and callable(adopt):
-            adopt(worker_input.agent_session)  # no second sign-in for this game
+            adopt(worker_input.agent_session)
         seat_auth = OfficialSeatAuth(official, worker_input.seat_id, worker_input.execution_id)
         game_client = AltruAgentClient(control_url=official.control_url, auth=seat_auth, load_env_file=False)
         give_up_at = now() + FIRST_GRANT_RETRY_SECONDS
         attempt = 0
         while True:
             try:
-                game_client.login()  # the first grant for this seat
+                game_client.login()
                 break
             except (PlatformError, AuthenticationError) as exc:
                 code = exc.error_code if isinstance(exc, OfficialAgentError) else None
@@ -379,10 +269,9 @@ def run_tournament_worker(
     except SeatLeaseLost:
         print_line(f"{label} stopped: another runtime now holds this seat")
         return EXIT_SEAT_BUSY
-    except Exception as exc:  # noqa: BLE001 - includes contestant factory errors and auth failures
+    except Exception as exc:
         code = exc.error_code if isinstance(exc, (PlatformError, AuthenticationError)) else None
         if (keeper is not None and keeper.lost.is_set()) or (isinstance(exc, OfficialAgentError) and code == "seat_busy"):
-            # Also when a GameAPI re-grant during play answered seat_busy.
             print_line(f"{label} stopped: another runtime now holds this seat")
             return EXIT_SEAT_BUSY
         if isinstance(exc, OfficialAgentError) and code == "assignment_not_grantable":
@@ -392,7 +281,6 @@ def run_tournament_worker(
             print_line(f"{label} {registration_wait_message(exc)}")
             return EXIT_REGISTRATION_INCOMPLETE
         if is_fatal_auth_error(exc):
-            # The key itself was refused (e.g. rotated while running).
             print_line(f"{label} {exc}")
             return EXIT_KEY_REFUSED
         if _is_transient(exc):
@@ -415,16 +303,11 @@ def run_tournament_worker(
 
 
 class _LeaseGuardedGameSession(MCPGameSession):
-    """The seat's MCP session, refusing every further GameAPI call once the
-    execution lease is lost (all tools go through ``_call``), so a worker that
-    lost its seat can't keep acting on it.
-    """
+
 
     def __init__(self, client, *, lost, **kwargs) -> None:
         super().__init__(client, **kwargs)
         self._lost = lost
-        # True after the first call GameAPI answered: from then on the platform
-        # counts this agent as connected to the game.
         self.contacted = False
 
     def _call(self, tool: str, arguments: dict) -> dict:
@@ -438,16 +321,10 @@ class _LeaseGuardedGameSession(MCPGameSession):
 
 
 def _tournament_process_entry(worker_input: TournamentWorkerInput) -> None:
-    """``multiprocessing.Process`` target for a tournament seat (see
-    ``_process_entry``)."""
+
     raise SystemExit(run_tournament_worker(worker_input))
 
 
 def _process_entry(worker_input: WorkerInput) -> None:
-    """The actual ``multiprocessing.Process`` target. Top-level and
-    importable by name, as Windows ``spawn`` requires. Translates
-    ``run_worker``'s return value into a real process exit code via
-    ``SystemExit`` — ``multiprocessing.Process.exitcode`` surfaces exactly
-    this value to the parent once the process has exited.
-    """
+
     raise SystemExit(run_worker(worker_input))

@@ -1,8 +1,3 @@
-"""Summarize an opt-in player-view JSONL log; never connect to a server.
-
-These are recorded actions, not counterfactual replay or simulated win rates.
-Run: python -m altru_redalert.inspect_log path/to/match.jsonl
-"""
 from __future__ import annotations
 import argparse
 from collections import Counter
@@ -27,8 +22,6 @@ def summarize(path):
             result = entry.get("result") or {}
             if result.get("error"):
                 errors[str(result["error"])] += 1
-            # Immediate counts only; final rejected/lost engine outcomes below
-            # are counted separately and deduplicated by batch/index/status.
             for row in result.get("results") or []:
                 verdicts["immediate_" + str(row.get("status", "unknown"))] += 1
             continue
@@ -81,7 +74,7 @@ def summarize(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Summarize an opt-in player-view JSONL log; never connect to a server.\n\nThese are recorded actions, not counterfactual replay or simulated win rates.\nRun: python -m altru_redalert.inspect_log path/to/match.jsonl\n')
     parser.add_argument("path", type=Path)
     args = parser.parse_args()
     print(json.dumps(summarize(args.path), indent=2, ensure_ascii=False))

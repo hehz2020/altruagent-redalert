@@ -1,5 +1,3 @@
-"""Offline adapter smoke tests; require the official SDK, no model or network."""
-
 from __future__ import annotations
 
 from contextlib import redirect_stderr
@@ -210,8 +208,6 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(len(files), 1)
             self.assertRegex(files[0].name, r"^[a-f0-9]{32}\.jsonl$")
             if os.name == "posix":
-                # Windows access control is inherited from the user's log
-                # directory; stat() does not represent POSIX owner bits there.
                 self.assertEqual(stat.S_IMODE(files[0].stat().st_mode), 0o600)
             text = files[0].read_text()
             self.assertNotIn(secret, text)

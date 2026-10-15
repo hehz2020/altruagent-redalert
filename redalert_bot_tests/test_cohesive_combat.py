@@ -1,4 +1,3 @@
-"""Candidate C: concrete formation/range contracts, not a win-rate claim."""
 import unittest
 
 from altru_redalert.combat import Military

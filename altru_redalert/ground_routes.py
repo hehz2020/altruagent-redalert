@@ -1,10 +1,3 @@
-"""Bounded group routes over the public, initial terrain picture.
-
-This is a conservative foot/tracked planning graph, not the engine pathfinder:
-diagonals cannot cut blocked corners; movable actors and changed terrain are
-not inferred. Callers supply an actual own-unit cell and retain engine control
-of movement. Missing or malformed public layout yields no route.
-"""
 from collections import OrderedDict, deque
 from heapq import heappop, heappush
 from math import isfinite
@@ -39,7 +32,7 @@ def _signature(view):
 
 
 class GroundRoutes:
-    """One graph per layout and at most four cached reverse route fields."""
+
 
     def __init__(self, view):
         self.signature = _signature(view)
@@ -77,7 +70,7 @@ class GroundRoutes:
 
     @property
     def available(self):
-        """Whether valid public terrain supplies at least one passable cell."""
+
         return bool(self.cells)
 
     def matches(self, view):
@@ -94,7 +87,7 @@ class GroundRoutes:
             yield neighbor, cost
 
     def reachable(self, start, goal):
-        """Strict static connectivity; unlike waypoint, does not project goal."""
+
         start, goal = pos(start), pos(goal)
         index = self._component.get(start)
         return index is not None and self._component.get(goal) == index
@@ -129,12 +122,7 @@ class GroundRoutes:
         return costs, next_cell
 
     def waypoint(self, start, goal, distance_cells=6):
-        """Walk a cached route for a bounded distance, never jump to an island.
 
-        A blocked/unreachable goal is projected into the source component.
-        An unknown source or invalid layout returns None for caller fallback.
-        No opponent or current resource data is read or reconstructed.
-        """
         start, goal = pos(start), pos(goal)
         if (start not in self._component or goal is None
                 or isinstance(distance_cells, bool) or not isinstance(distance_cells, (int, float))
@@ -144,8 +132,6 @@ class GroundRoutes:
         if start == target:
             return list(start)
         budget = distance_cells * 10
-        # Any two connected cells have a simple path using at most n - 1
-        # edges. A caller requesting an endpoint can avoid building a field.
         if budget >= 14 * (len(self._members[self._component[start]]) - 1):
             return list(target)
         if target not in self._fields:

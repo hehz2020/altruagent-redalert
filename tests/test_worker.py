@@ -1,9 +1,3 @@
-"""Unit tests for altruagent.worker.run_worker. All dependencies are
-injected fakes — no real client/network/process — except one small,
-separate test that proves genuine Windows-`spawn`-compatible multiprocessing
-actually works for a top-level target function (bottom of file).
-"""
-
 from __future__ import annotations
 
 import multiprocessing
@@ -114,11 +108,11 @@ def test_run_worker_missing_create_agent_fails_clearly_without_touching_client()
     exit_code = run_worker(
         WORKER_INPUT,
         client_factory=lambda: client_built.append(1) or FakeClient(),
-        agent_module=make_agent_module(),  # no create_agent attribute at all
+        agent_module=make_agent_module(),
     )
 
     assert exit_code == EXIT_UNEXPECTED
-    assert client_built == []  # failed before ever building a client
+    assert client_built == []
 
 
 def test_run_worker_non_callable_create_agent_fails_clearly():
@@ -157,10 +151,6 @@ def test_run_worker_match_scoped_errors_return_match_failure_and_close_client(er
 
 
 def test_run_worker_unexpected_exception_returns_unexpected_and_closes_client():
-    # Includes what an AuthenticationError inside one worker looks like:
-    # caught here as "unexpected" (cooldown-worthy), never propagated to
-    # kill the whole supervisor — a single worker's auth trouble isn't
-    # assumed to be a global problem (see altruagent.supervisor).
     fake_client = FakeClient()
 
     def run_match_fn(match, agent_id, decision_fn):
@@ -218,9 +208,6 @@ def test_run_worker_resign_decision_passed_through_to_run_match():
     assert run_match_calls == [RESIGN]
 
 
-# -- fresh-instance semantics ------------------------------------------------
-# Two separate run_worker calls stand in for two separate worker PROCESSES —
-# each would independently call create_agent() exactly once, exactly like this.
 
 
 def test_two_worker_invocations_get_distinct_contestant_instances():
@@ -241,11 +228,6 @@ def test_two_worker_invocations_get_distinct_contestant_instances():
 
     def make_run_match_fn(marker):
         def run_match_fn(match, agent_id, decision_fn):
-            # run_worker deliberately passes the raw create_agent() result
-            # through unchanged (an object here, not directly callable) and
-            # relies on run_match's own duck-typed resolution — mirror that
-            # same one-line resolution here rather than assuming decision_fn
-            # is always a plain callable.
             resolved = decision_fn if callable(decision_fn) else decision_fn.choose_action
             resolved(marker, None)
             return terminal_state()
@@ -270,10 +252,9 @@ def test_two_worker_invocations_get_distinct_contestant_instances():
     assert len(created_instances) == 2
     assert created_instances[0] is not created_instances[1]
     assert created_instances[0].history == ["s-1"]
-    assert created_instances[1].history == ["s-2"]  # no cross-contamination
+    assert created_instances[1].history == ["s-2"]
 
 
-# -- messaging survives the worker's object-passing path (Milestone 5) ------
 
 
 def mcp_messaging_state_payload(**overrides) -> dict:
@@ -296,12 +277,7 @@ def mcp_messaging_state_payload(**overrides) -> dict:
 
 
 class FakeMCPGameSessionForWorker:
-    """Minimal MCPGameSession double so this test can exercise the REAL
-    ``run_match``/``run_game`` (not a faked ``run_match_fn``) — proving a
-    contestant object's ``choose_message`` survives run_worker's
-    unmodified object-passing all the way through a real messaging round,
-    through the MCP transport specifically (never REST).
-    """
+
 
     def __init__(self) -> None:
         self._queue = [
@@ -381,16 +357,10 @@ def test_run_worker_supports_choose_message_through_real_run_match():
     assert fake_game.terminate_messaging_calls == 1
 
 
-# -- real multiprocessing spawn compatibility (minimal, targeted) -----------
 
 
 def _spawn_probe_target(value: int) -> None:
-    """Top-level, importable-by-name target — proves the exact mechanism
-    ``_process_entry`` relies on (a plain module-level function + a
-    picklable argument, run under the explicit 'spawn' context, surfacing
-    its result via SystemExit -> Process.exitcode) actually works, without
-    touching any real SDK/network code inside the child.
-    """
+
     raise SystemExit(value + 1)
 
 

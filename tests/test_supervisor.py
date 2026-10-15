@@ -1,10 +1,3 @@
-"""Unit tests for altruagent.supervisor. No real client/network/process is
-involved: a FakeClient scripts sessions() responses and a FakeProcess
-stands in for multiprocessing.Process, so worker lifecycle is fully
-controlled and deterministic. Real spawn compatibility is proven separately
-in tests/test_worker.py.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -72,7 +65,7 @@ class FakeProcess:
         self._alive = False
 
     def finish(self, exitcode: int = 0) -> None:
-        """Test helper: simulate the process completing on its own."""
+
         self._alive = False
         self._exitcode = exitcode
 
@@ -101,7 +94,6 @@ def make_clock(start: float = 0.0, step: float = 1.0):
     return now
 
 
-# -- WorkerRegistry -----------------------------------------------------
 
 
 def test_registry_reap_finished_removes_and_reports_exitcode():
@@ -110,7 +102,7 @@ def test_registry_reap_finished_removes_and_reports_exitcode():
     process.start()
     registry.start("s-1", process)
 
-    assert registry.reap_finished() == {}  # still alive, nothing to reap yet
+    assert registry.reap_finished() == {}
 
     process.finish(exitcode=0)
 
@@ -146,7 +138,6 @@ def test_registry_pids_reflects_distinct_live_workers():
     assert pids["s-1"] != pids["s-2"]
 
 
-# -- run_once_concurrent: discovery + spawn ------------------------------
 
 
 def test_run_once_concurrent_spawns_worker_for_one_active_match():
@@ -203,12 +194,11 @@ def test_run_once_concurrent_never_starts_duplicate_worker_for_live_session():
     run_once_concurrent(client, registry=registry, failed_until={}, agent_id=AGENT_ID, process_factory=factory)
     run_once_concurrent(client, registry=registry, failed_until={}, agent_id=AGENT_ID, process_factory=factory)
 
-    assert len(factory.processes) == 1  # second tick: s-1 already has a live worker
+    assert len(factory.processes) == 1
 
 
 def test_run_once_concurrent_starts_new_worker_while_another_still_runs():
     m1, m2 = match("s-1"), match("s-2")
-    # Tick 1: only s-1 active. Tick 2: s-1 (still running) + newly-active s-2.
     client = FakeClient(sessions_with_active(m1), sessions_with_active(m1, m2))
     factory = FakeProcessFactory()
     registry = WorkerRegistry()
@@ -218,12 +208,12 @@ def test_run_once_concurrent_starts_new_worker_while_another_still_runs():
 
     assert len(factory.processes) == 2
     assert registry.is_active("s-1") and registry.is_active("s-2")
-    assert not factory.processes[0].terminated  # s-1's worker was never touched/restarted
+    assert not factory.processes[0].terminated
 
 
 def test_run_once_concurrent_reaps_finished_worker():
     m = match("s-1")
-    client = FakeClient(sessions_with_active(m), sessions_with_active())  # s-1 gone by tick 2
+    client = FakeClient(sessions_with_active(m), sessions_with_active())
     factory = FakeProcessFactory()
     registry = WorkerRegistry()
 
@@ -232,10 +222,9 @@ def test_run_once_concurrent_reaps_finished_worker():
     run_once_concurrent(client, registry=registry, failed_until={}, agent_id=AGENT_ID, process_factory=factory)
 
     assert len(registry) == 0
-    assert len(factory.processes) == 1  # no new worker spawned; s-1 wasn't active anymore
+    assert len(factory.processes) == 1
 
 
-# -- cooldown -------------------------------------------------------------
 
 
 def test_failed_worker_enters_cooldown_and_is_not_immediately_respawned():
@@ -257,7 +246,7 @@ def test_failed_worker_enters_cooldown_and_is_not_immediately_respawned():
     )
 
     assert "s-1" in failed_until
-    assert len(factory.processes) == 1  # no respawn while cooling down
+    assert len(factory.processes) == 1
 
 
 def test_cooldown_expiry_permits_retry():
@@ -265,7 +254,7 @@ def test_cooldown_expiry_permits_retry():
     client = FakeClient(sessions_with_active(m))
     factory = FakeProcessFactory()
     registry = WorkerRegistry()
-    failed_until = {"s-1": 5.0}  # cooldown already expired as of "now" below
+    failed_until = {"s-1": 5.0}
 
     run_once_concurrent(
         client, registry=registry, failed_until=failed_until, agent_id=AGENT_ID,
@@ -276,7 +265,6 @@ def test_cooldown_expiry_permits_retry():
     assert registry.is_active("s-1")
 
 
-# -- run_forever_concurrent -----------------------------------------------
 
 
 def test_run_forever_concurrent_sleeps_between_ticks_and_respects_max_iterations():
@@ -303,7 +291,7 @@ def test_run_forever_concurrent_terminates_outstanding_workers_on_exit():
         process_factory=factory, max_iterations=1,
     )
 
-    assert factory.processes[0].terminated  # still "running" when the bounded loop ended
+    assert factory.processes[0].terminated
 
 
 def test_run_forever_concurrent_propagates_discovery_failure_and_still_exits_cleanly():

@@ -1,10 +1,3 @@
-"""Import a contestant agent factory from a ``MODULE[:FACTORY]`` spec.
-
-Shared by ``python -m agent``'s ``--agent`` option and the tournament worker
-processes (which receive only the spec string and import it themselves, since
-a spawned process can't be handed a function object from its parent).
-"""
-
 from __future__ import annotations
 
 import importlib
@@ -14,10 +7,7 @@ DEFAULT_AGENT_SPEC = "agent.agent:create_agent"
 
 
 def load_agent_factory(spec: str) -> Callable:
-    """Import ``MODULE[:FACTORY]`` (``FACTORY`` defaults to ``create_agent``)
-    and return the factory without calling it. Raises ``ValueError`` with a
-    human-readable message for every way that can go wrong.
-    """
+
     module_name, _, factory_name = spec.partition(":")
     factory_name = factory_name or "create_agent"
     if (
@@ -38,7 +28,7 @@ def load_agent_factory(spec: str) -> Callable:
                 "root directory and pass a dotted module path, not a file path."
             ) from exc
         raise ValueError(f"Importing agent module {module_name!r} failed: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 - any import-time failure in contestant code
+    except Exception as exc:
         raise ValueError(f"Importing agent module {module_name!r} raised {exc!r}.") from exc
 
     factory = getattr(module, factory_name, None)

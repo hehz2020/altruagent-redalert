@@ -1,13 +1,3 @@
-"""Automated proof that the production gameplay path (run_match / run_game /
-python -m agent) never constructs or calls the REST GameSession, for any
-reason — not merely documented, but testable (per the Milestone 6 migration
-requirement). This is the strongest form of the guarantee: it patches
-GameSession.__init__ itself to fail loudly if ANY code path along the way
-ever tries to build one, rather than just checking which Match method was
-called (see test_runner.py::test_run_match_never_constructs_a_rest_gamesession
-for that narrower check).
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -55,10 +45,7 @@ class FakeMCPGameSession:
 
 @pytest.fixture
 def forbid_rest_gamesession(monkeypatch):
-    """Patch GameSession.__init__ to fail loudly if constructed — proving no
-    code path in this test reaches it, not just that we didn't call it
-    ourselves.
-    """
+
 
     def _forbidden(self, *args, **kwargs):
         raise AssertionError(

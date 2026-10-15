@@ -1,12 +1,3 @@
-"""Response models for the AltruAgent SDK.
-
-Models are deliberately tolerant of extra/unknown fields from the backend —
-new fields the platform adds later should never break parsing. ``raw`` keeps
-the full server response for anything not (yet) promoted to a typed
-attribute, with one exception: fields the SDK never surfaces at all (see
-``Agent`` below), regardless of what the live endpoint happens to return.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,22 +8,16 @@ if TYPE_CHECKING:
     from .game import GameSession
     from .mcp_game import MCPGameSession
 
-# The real GET /auth/agent/me and POST /auth/human/claim responses currently
-# include these (they're the agent's raw DB row — see
-# Agent_ACP/backend/src/models/agent.ts and index.ts's `/auth/agent/me`
-# handler, which spreads the row as-is). They're one-way hashes, not the
-# actual api_key/claim_token secrets, but contestant code has no reason to
-# ever see them, so they're stripped before `Agent.raw` is populated.
 _SENSITIVE_FIELDS = ("api_key_hash", "claim_token_hash")
 
 
 @dataclass
 class Agent:
-    """The authenticated agent, as returned by ``GET /auth/agent/me``."""
+
 
     id: str
     name: str
-    status: str  # "unclaimed" or "claimed"
+    status: str
     description: str | None = None
     claimed_by_user_id: str | None = None
     claimed_at: str | None = None
@@ -60,18 +45,7 @@ class Agent:
 
 @dataclass
 class NextAction:
-    """Machine-readable "what can I do right now" guidance — supplementary
-    context only, never the runner's primary turn-detection mechanism (see
-    ``altruagent.runner``, which drives off ``is_current_actor``/``phase``/
-    ``is_terminal`` instead).
 
-    REST shapes this as ``{"action", "endpoint", "hint", "required_fields"}``
-    (gameapi/src/gameapi/models/responses.py's ``NextAction``); MCP shapes it
-    as ``{"tool", "hint"}`` (gameapi/src/gameapi/mcp_server/catalog.py's
-    ``game_state_payload``/``play_action_payload``/etc.) — this model reads
-    either key name into the same ``action`` field so callers don't need to
-    know which transport produced it.
-    """
 
     action: str
     hint: str
@@ -90,25 +64,14 @@ class NextAction:
 
 @dataclass
 class PlayerRef:
-    """A player reference as GameAPI serializes it: just a display name.
 
-    See gameapi/src/gameapi/domain/__init__.py's ``Player`` dataclass and
-    ``GameStateResponse.current_player: Player | None``.
-    """
 
     name: str
 
 
 @dataclass
 class Message:
-    """A single messaging-phase message, as GameAPI serializes it. Mirrors
-    gameapi/src/gameapi/models/responses.py's ``MessageResponse`` exactly
-    (``index``, ``sender``, ``recipients``, ``content``, ``type``,
-    ``sent_at``, ``move_index``). ``type`` is ``"chat"`` or ``"terminate"``
-    (see gameapi/src/gameapi/domain/__init__.py's ``MessageType``);
-    ``recipients`` empty means broadcast, one entry means a targeted p2p
-    message (the server rejects 2+ today — p2group is gated).
-    """
+
 
     index: int
     sender: int
@@ -121,8 +84,6 @@ class Message:
     @classmethod
     def from_dict(cls, data: dict) -> "Message":
         return cls(
-            # Platform messages carry `seq` (the MCP envelope); `index` is the
-            # legacy alias. Prefer `seq`, which wait_for_update compares on.
             index=data.get("seq", data.get("index", 0)),
             sender=data.get("sender", 0),
             recipients=list(data.get("recipients") or []),
@@ -135,21 +96,7 @@ class Message:
 
 @dataclass
 class LegalAction:
-    """One action a contestant may currently take, as MCP's ``get_legal_actions``
-    tool returns it (and as REST's ``legal_actions``/``legal_actions_str`` pair
-    is synthesized into, for uniformity — see ``GameState.from_dict`` below).
 
-    ``action_id`` is always a string and is the only thing ``play_action``
-    needs back — for OpenSpiel-family games it's a stringified int (e.g.
-    ``"0"``); for structured RuntimeAdapter games (e.g. Pokémon) it can be
-    anything the adapter defines (``"move:0"``, ``"switch:1"``,
-    ``"draft_pick:<card_id>"``, ``"submit_team"``). ``input`` is the adapter's
-    own structured payload for this action (empty ``{}`` for a REST-synthesized
-    entry, since REST has nothing equivalent) — for constructive actions like
-    Pokémon's ``submit_team`` it's a template the server expects a contestant
-    to build a real value from, not something to submit verbatim (see
-    ``altruagent.runner``'s dict-decision escape hatch).
-    """
 
     action_id: str
     label: str | None
@@ -168,34 +115,7 @@ class LegalAction:
 
 @dataclass
 class GameState:
-    """A game state, normalized across both the REST GameAPI
-    (``GET/POST /games/{session_id}...`` — see ``GameSession``, kept only as
-    a lower-level debug/manual-testing tool) and MCP's gameplay tools (see
-    ``MCPGameSession``, what ``python -m agent`` actually plays through).
 
-    ``legal_actions`` is always ``list[LegalAction]`` regardless of which
-    transport produced it: MCP's ``get_legal_actions`` already returns that
-    shape; REST's separate ``legal_actions``/``legal_actions_str`` int/str
-    lists are zipped into synthetic ``LegalAction`` entries (``input={}``) so
-    contestant code never has to care which transport it's talking to. The
-    universal pattern ``return state.legal_actions[0]`` works unchanged either
-    way.
-
-    ``state_version``/``is_current_actor`` are MCP concepts with no REST
-    equivalent (default to ``0``/``None`` when parsed from a REST response,
-    since REST has no optimistic-concurrency counter and infers turn-taking
-    from ``current_player`` instead — preserved on this model only for the
-    debug path, not used by the MCP-driven runner).
-
-    Richer per-game fields (repeated_pd's round history, Avalon's
-    ``avalon_*`` fields, Pokémon's draft/roster detail) are not individually
-    modeled — always available via ``raw``, the complete unmodified response
-    for whichever tool/endpoint produced this state.
-
-    ``final_result`` is the server's whole ``get_result`` (or ``resign``)
-    answer once the game is over (``your_return``, ``winner_agent_id``, the
-    game's own per-player ``result`` where it has one), and ``None`` before.
-    """
 
     session_id: str
     game_name: str
@@ -220,10 +140,7 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data: dict) -> "GameState":
-        """Parse a REST ``GameStateResponse`` (``GameSession`` — the debug
-        path). Synthesizes ``LegalAction`` entries from the separate
-        ``legal_actions``/``legal_actions_str`` int/str lists REST returns.
-        """
+
         current_player_data = data.get("current_player")
         current_player = (
             PlayerRef(name=current_player_data["name"])
@@ -277,23 +194,7 @@ class GameState:
         legal_actions: dict | None = None,
         result: dict | None = None,
     ) -> "GameState":
-        """Parse an MCP ``get_game_state``/``wait_for_update`` result (the
-        production path — see ``MCPGameSession``). ``legal_actions`` defaults
-        to the one the server embeds in the state when this agent can act;
-        pass a ``get_legal_actions`` result to override it (the runner's
-        fallback when the server omitted it). ``result`` merges in a
-        ``get_result`` result (only fetched once ``is_terminal`` — MCP's
-        ``get_game_state`` doesn't embed ``returns``/``termination_reason``
-        the way REST's does).
 
-        Confirmed field names directly against
-        ``gameapi/src/gameapi/runtime_adapters/{openspiel_adapter,pokemon_adapter}.py``:
-        both adapters return the same generic keys (``session_id``,
-        ``state_version``, ``observation``, ``phase``, ``is_terminal``,
-        ``is_current_actor``, ``status``) regardless of which one is behind a
-        given session — this is what lets one runner drive both without any
-        per-game branching.
-        """
         current_actor = state.get("current_actor")
         current_player = (
             PlayerRef(name=str(current_actor.get("agent_id")))
@@ -308,11 +209,6 @@ class GameState:
             Message.from_dict(m) for m in (state.get("new_messages") or [])
         ]
         result = result or {}
-        # `result` (get_result/resign) is authoritative for is_terminal/status
-        # when present — it's fetched precisely because `state` (an earlier
-        # get_game_state, or the pre-resign state) may be stale on exactly
-        # these two fields (e.g. built right before resigning, when the
-        # match wasn't terminal yet).
         is_terminal = bool(result.get("is_terminal", state.get("is_terminal", False)))
         status = result.get("status", state.get("status", "unknown"))
         return cls(
@@ -345,19 +241,7 @@ class GameState:
 
 @dataclass
 class Match:
-    """A contestant-facing view over one Competition row, as returned by
-    ``GET /agents/me/sessions`` (verified against Agent_ACP
-    backend/src/db/competitions.ts's ``getCompetitionsForAgent`` and
-    services/competitionService.ts's ``listAgentSessions``). Called "Match",
-    not "Assignment" — the backend has no such concept; this simply wraps a
-    raw ``competitions`` table row.
 
-    ``game_server_url`` is never present on this endpoint's rows (confirmed —
-    it is not a stored column anywhere; it's computed only by
-    ``GET /competitions/{id}`` and ``GET /tournaments/{id}``). It starts
-    ``None`` here and is resolved lazily, only when ``game()`` is actually
-    called — see ``game()`` below.
-    """
 
     session_id: str
     status: str
@@ -386,23 +270,7 @@ class Match:
         return match
 
     def _resolve_game_server_url(self) -> str:
-        """Shared lazy-resolution logic for both ``game()`` and
-        ``rest_game()`` — MCP is mounted on the same host REST's
-        ``game_server_url`` already points at, so one resolution serves both
-        transports; only the path suffix differs (see each method below).
 
-        - If ``game_server_url`` was already resolved (cached from a prior
-          call on this same ``Match`` instance), this makes no network
-          request at all.
-        - If not, and ``status == "in_progress"``, this makes exactly one
-          request — ``GET /competitions/{session_id}`` (the same endpoint
-          that computes ``game_server_url`` for a single competition) — and
-          caches the result on this instance so repeated calls don't repeat
-          the lookup.
-        - A ``waiting`` match has no GameAPI session to open yet, and a
-          ``completed`` one no longer has a playable one; both raise
-          ``ValueError`` immediately, with no network request.
-        """
         if self._client is None:
             raise ValueError(
                 "This Match has no client attached (it wasn't returned by "
@@ -435,40 +303,19 @@ class Match:
         return game_server_url
 
     def game(self) -> "MCPGameSession":
-        """Return a playable ``MCPGameSession`` for this match — the
-        production gameplay path ``run_match``/``python -m agent`` use.
-        Resolves ``game_server_url`` lazily (see ``_resolve_game_server_url``)
-        — MCP is mounted on the same host REST's ``game_server_url`` already
-        resolves to, so no new discovery step is needed; only the path
-        suffix (``/mcp`` vs ``/games/{id}``) differs.
-        """
+
         game_server_url = self._resolve_game_server_url()
         return self._client.mcp_game(session_id=self.session_id, game_server_url=game_server_url)
 
     def rest_game(self) -> "GameSession":
-        """Return a playable REST ``GameSession`` for this match — the
-        lower-level debug/manual-testing path (see ``scripts/check_game.py``),
-        not used by ``run_match``/``python -m agent``. Same lazy resolution
-        as ``game()``.
-        """
+
         game_server_url = self._resolve_game_server_url()
         return self._client.game(session_id=self.session_id, game_server_url=game_server_url)
 
 
 @dataclass
 class AgentSessions:
-    """This agent's competition memberships, as returned by
-    ``GET /agents/me/sessions``, grouped exactly as the server groups them:
-    ``joined_sessions`` -> ``waiting``, ``active_sessions`` -> ``active``,
-    ``completed_sessions`` -> ``completed``. Includes both standalone
-    competitions and tournament-created child matches (the endpoint does not
-    distinguish at the query level — see ``Match.tournament_id``).
 
-    The backend caps this at the 50 most recently joined memberships in
-    total, not per group (``getCompetitionsForAgent``'s ``.limit(50)``) — a
-    long-lived agent's oldest completed matches can silently drop off before
-    its current ones would.
-    """
 
     waiting: list[Match] = field(default_factory=list)
     active: list[Match] = field(default_factory=list)
@@ -490,12 +337,7 @@ class AgentSessions:
 
 @dataclass
 class TournamentViewer:
-    """The calling agent's membership view of a tournament — present only on
-    an authenticated ``GET /tournaments/{id}`` (see Agent_ACP
-    backend/src/services/tournamentService.ts's ``getTournament``, which only
-    builds a ``viewer`` object when the request carried a JWT that resolved
-    to an agent).
-    """
+
 
     agent_id: str | None = None
     is_tournament_participant: bool = False
@@ -518,22 +360,7 @@ class TournamentViewer:
 
 @dataclass
 class Tournament:
-    """A tournament, as returned by either ``GET /tournaments`` (list — a raw
-    ``tournaments`` DB row) or ``GET /tournaments/{id}`` (detail — a curated
-    ``compactTournament()`` subset with a *different* field set — see
-    Agent_ACP backend/src/services/tournamentService.ts). Both shapes are
-    tolerated: only fields useful and common enough to model are typed;
-    everything else (list-only fields like ``created_at``/``metadata``, or
-    detail-only ``leaderboard``/``participants``) stays reachable via ``raw``.
 
-    There is no ``name`` field anywhere on the backend (confirmed against
-    the DB schema) — a tournament is identified only by ``tournament_id`` +
-    ``game_type``.
-
-    ``viewer`` is ``None`` unless this came from an authenticated
-    ``GET /tournaments/{id}`` call that returned one (never present on a
-    ``GET /tournaments`` list entry).
-    """
 
     tournament_id: str
     status: str
@@ -564,15 +391,7 @@ class Tournament:
 
 @dataclass(frozen=True)
 class SeatGrant:
-    """One assigned seat's GameAPI authorization, as returned by
-    ``POST /tournament/agent/assignments/:seatId/grant`` (Agent_ACP
-    backend/src/services/officialAgentConnectionService.ts's
-    ``buildSeatGrant``). Represents exactly one seat of one match.
 
-    ``access_token`` is temporary (see ``expires_at``) and renewed by
-    ``OfficialSeatAuth``; it is excluded from ``repr`` and ``raw``, so
-    printing or logging a grant never shows it. Never persisted.
-    """
 
     access_token: str = field(repr=False)
     agent_id: str
@@ -606,12 +425,12 @@ class SeatGrant:
 
 
 def _text_or_none(value: Any) -> str | None:
-    """A non-empty string from the server, else ``None`` (tolerates any type)."""
+
     return value if isinstance(value, str) and value.strip() else None
 
 
 def _opponent_names(value: Any) -> tuple[str, ...]:
-    """``[{"name": ...}, ...]`` (or plain strings) -> a tuple of names."""
+
     if not isinstance(value, list):
         return ()
     names = []
@@ -624,26 +443,7 @@ def _opponent_names(value: Any) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class OfficialAssignment:
-    """One active game seat assigned to this event agent, as listed by
-    ``GET /tournament/agent/assignments`` (Agent_ACP
-    backend/src/services/officialAgentConnectionService.ts's
-    ``OfficialAssignment``). ``seat_id`` is the stable identity: the runtime
-    keeps at most one worker per seat.
 
-    The newer fields are optional; an older backend simply leaves them out.
-    ``context`` decides which runtime plays the game; the rest are only for
-    display:
-
-    - ``context``: ``"testing"`` (a test match, played by ``--match``) or
-      ``"tournament"`` (played by ``--tournament``). Missing means a
-      tournament game (``altruagent.supervisor.assignment_kind``).
-    - ``tournament_id``/``tournament_name``/``round_label``: which tournament
-      and round this game belongs to (tournament games only).
-    - ``opponents``: the other agents' display names, as a tuple of strings
-      (the server sends ``[{"name": ...}]``).
-    - ``connect_deadline_at``: ISO 8601 time by which this agent must have
-      connected; an agent that isn't connected by then forfeits the game.
-    """
 
     match_id: str
     seat_id: str
@@ -680,27 +480,7 @@ class OfficialAssignment:
 
 @dataclass(frozen=True)
 class DecisionContext:
-    """The minimal identifying information handed to contestant decision
-    logic alongside a ``GameState`` (see ``altruagent.runner``).
 
-    Deliberately carries no client/session object — a decision function
-    should be able to reason about the game without being handed enough
-    power to mutate an unrelated match. ``session_id``/``game_type`` are
-    also available on ``GameState`` itself (as ``session_id``/``game_name``)
-    but are repeated here so contestant code doesn't need to thread
-    ``state`` through just to log/key by them; ``tournament_id``/
-    ``agent_id`` are not available anywhere else.
-
-    ``seat_position`` (0-based) is your seat in the game, set for every game
-    played by ``python -m agent`` (``--tournament``/``--match``).
-    ``tournament_id`` is set for a tournament game and ``None`` for a Testing
-    game.
-
-    ``game_config`` is the game's ``get_game_config`` reference (rules, order
-    formats, maps). The runner fills it in for real-time games only, once,
-    before the first decision; it's ``None`` otherwise or if the server
-    couldn't provide it.
-    """
 
     session_id: str
     tournament_id: str | None

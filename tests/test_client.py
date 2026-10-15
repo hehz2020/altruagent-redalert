@@ -1,7 +1,3 @@
-"""Unit tests for AltruAgentClient. All HTTP is mocked via httpx.MockTransport —
-none of these require a running platform.
-"""
-
 from __future__ import annotations
 
 import json
@@ -85,7 +81,6 @@ def test_automatic_relogin_and_single_retry_after_401():
         if request.url.path == "/auth/agent/me":
             me_auth_headers.append(request.headers["Authorization"])
             if len(me_auth_headers) == 1:
-                # Server treats the first token as stale/expired.
                 return httpx.Response(401, json={"error": "Invalid or expired token"})
             return httpx.Response(
                 200, json={"id": "agent-1", "name": "A", "status": "claimed"}
@@ -96,7 +91,7 @@ def test_automatic_relogin_and_single_retry_after_401():
     agent = client.me()
 
     assert agent.id == "agent-1"
-    assert login_count == 2  # initial login + exactly one re-login after the 401
+    assert login_count == 2
     assert me_auth_headers == ["Bearer jwt-1", "Bearer jwt-2"]
 
 
@@ -119,8 +114,8 @@ def test_retry_stops_after_second_401():
     with pytest.raises(AuthenticationError):
         client.me()
 
-    assert login_count == 2  # initial login + exactly one re-login, no loop
-    assert me_attempts == 2  # exactly one retry
+    assert login_count == 2
+    assert me_attempts == 2
 
 
 def test_missing_configuration_raises_configuration_error(monkeypatch):
@@ -138,7 +133,6 @@ def test_missing_api_key_only_raises_configuration_error(monkeypatch):
     with pytest.raises(ConfigurationError) as exc_info:
         AltruAgentClient(load_env_file=False)
 
-    # The default API-key mode is retired: the error says what to do instead.
     assert "was retired" in str(exc_info.value)
     assert "ALTRUAGENT_OFFICIAL_AGENT_KEY" in str(exc_info.value)
 

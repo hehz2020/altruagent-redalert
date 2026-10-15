@@ -1,4 +1,3 @@
-"""Budget and request boundaries for the post-opening screen experiment."""
 from altru_redalert.economy import Economy, _reserved
 from altru_redalert.model import View
 from redalert_bot_tests.test_development_v22 import development_view, purchases, purchase_cost
@@ -21,7 +20,6 @@ def screen_view(*, tanks=3, rifles=4, harvesters=4, cash=1150,
 
 def test_first_three_tanks_are_unchanged_but_next_slot_gets_a_legal_screen_car():
     policy = Economy()
-    # Do not divert the first tank timing merely because its screen is small.
     assert purchases(screen_view(tanks=2, rifles=0), policy) == [
         {"cmd": "train", "item": "3tnk"}]
     assert purchases(screen_view(cash=599), policy) == []
@@ -39,14 +37,10 @@ def test_fourth_miner_keeps_the_original_priority_over_the_screen_car():
 def test_observed_core_milestone_restores_three_rifles_after_losses():
     policy = Economy()
     purchases(screen_view(cash=0), policy)
-    # The real failing trace had 2 tanks, 0 rifles, and 1175 spare funds.
-    # Having previously fielded 3 tanks prevents repeating that tank-only spend.
     damaged = screen_view(tanks=2, rifles=0, cash=1175)
     result = purchases(damaged, policy)
     assert result == [{"cmd": "train", "item": "e1", "count": 3}]
     assert purchase_cost(damaged, result) == 300
-    # Already requested rifles count toward the floor, without assuming the
-    # spent 300 is free again or issuing a duplicate infantry request.
     waiting = screen_view(tanks=2, rifles=0, cash=1175, pending=result)
     next_orders = purchases(waiting, policy)
     assert next_orders == [{"cmd": "train", "item": "ftrk"}]
@@ -76,5 +70,4 @@ def test_visible_close_attack_still_releases_development_savings():
     v = screen_view(tanks=2, rifles=0, cash=300,
                     enemies=[actor(90, "2tnk", 13, 12), actor(91, "2tnk", 14, 12)])
     result = purchases(v, policy)
-    # Emergency anti-armor production is allowed to override the rifle floor.
     assert result == [{"cmd": "train", "item": "e3"}]

@@ -1,15 +1,3 @@
-"""Visible-contact combat estimates, not an engine simulation.
-
-Runtime hp, speed, and matching weapon range/damage take precedence. The compact
-fallback table uses public OpenRA release-20250330 rules (weapons/ballistics.yaml,
-smallcaliber.yaml, missiles.yaml; rules/vehicles.yaml and infantry.yaml). Platform
-config exposes only one arm and omits reload/armor/versus, so those remain estimates.
-In particular, rocket infantry and flak trucks need their separate ground arms.
-
-Spearhead's LocalAttackAssessment, EffectiveLocalTargeting and FightingWithdrawal
-inspired the separation between local commitment, suitable targets and escape.
-This is an independent Python implementation using player observations only.
-"""
 from dataclasses import dataclass
 from math import sqrt
 
@@ -28,7 +16,7 @@ class Weapon:
     range: float
     damage: float
     reload: float
-    versus: tuple = (1., 1., 1., 1., 1.)  # None, Wood, Light, Heavy, Concrete
+    versus: tuple = (1., 1., 1., 1., 1.)
     burst: float = 1.
     minimum: float = 0.
     domain: str = 'ground'
@@ -36,8 +24,6 @@ class Weapon:
     accuracy: float = 1.
 
 
-# Burst firing time and accuracy are conservatively approximated: this table does
-# not claim knowledge of observed reload state, projectile hits, or exact DPS.
 MG = (1.5, .1, .3, .1, .1)
 CANNON = (.3, .75, .75, 1.15, .5)
 PROFILES = {
@@ -63,7 +49,6 @@ PROFILES = {
     'shok': (Weapon('PortaTesla', 6., 4500, 2.8, (10., .73, 1., .6, 1.)),),
     'ttnk': (Weapon('TTankZap', 7., 10000, 4.8, (10., 1., 1., 1., 1.)),),
     'gun': (Weapon('TurretGun', 6.5, 6000, 1.2, (.2, .5, .75, 1., .5)),),
-    # Tesla charging and pillbox occupants are absent from the seat schema.
     'tsla': (Weapon('TeslaZap', 7., 10000, 2.4, (10., .6, 1., 1., 1.)),),
     'pbox': (Weapon('Vulcan', 5., 1000, 1.6, (2., .5, .5, .2, .2), burst=6),),
     'hbox': (Weapon('Vulcan', 5., 1000, 1.6, (2., .5, .5, .2, .2), burst=6),),
@@ -125,8 +110,6 @@ def weapons(view, actor):
     result = []
     for w in profiles:
         matches = str(observed.get('weapon', '')).lower() == w.name.lower()
-        # Only a matching arm is overridden. The runtime's e3 AA arm cannot
-        # accidentally turn its Dragon ground weapon into an AA weapon.
         result.append(Weapon(w.name,
             max(0., number(observed.get('range_cells'), w.range)) if matches else w.range,
             max(0., number(observed.get('damage'), w.damage)) if matches else w.damage,
@@ -144,11 +127,7 @@ def weapon_range(view, attacker, target=None):
 
 
 def damage_rate(view, attacker, target, *, at_distance=None, horizon=0.):
-    """Expected output proxy against this armor; zero for unsuitable weapons.
 
-    ``horizon`` discounts time needed to join a local fight. It never predicts
-    hidden positions or pretends that an issued attack is guaranteed to hit.
-    """
     domain = 'air' if kind(target) in AIR else 'ground'
     target_armor = armor(view, target)
     best = 0.
@@ -165,20 +144,13 @@ def damage_rate(view, attacker, target, *, at_distance=None, horizon=0.):
                 travel = (at_distance - w.range) / speed(view, attacker)
                 participation = max(0., 1. - travel / horizon)
         rate = w.damage * w.burst / w.reload * w.versus[target_armor] * w.accuracy
-        # Output cannot continuously kill more than one target per short shot.
         rate = min(rate, health(view, target) * 2.)
         best = max(best, rate * participation)
     return best
 
 
 def force_ratio(view, own, enemy, horizon=8., *, projected=False):
-    """Compare local forces, optionally after a reachable assault closes range.
 
-    A prospective assault must include stationary defenders' future counterfire:
-    a tank approaching a Tesla tower eventually enters the tower's range. A gun
-    with longer range than the tower can instead bombard without that counterfire.
-    This projection is used only for strategic commitment, not current targeting.
-    """
     if not own:
         return 0.
     if not enemy:
@@ -196,8 +168,6 @@ def force_ratio(view, own, enemy, horizon=8., *, projected=False):
             return current
         own_range = weapon_range(view, a, b)
         if speed(view, a) > 0 and own_range > 0:
-            # Project only units that could reach a firing position within the
-            # horizon; otherwise their distant reinforcement is still discounted.
             if max(0., current - own_range) <= speed(view, a) * horizon:
                 return min(current, own_range)
         elif speed(view, a) == 0 and speed(view, b) > 0:
@@ -217,8 +187,6 @@ def force_ratio(view, own, enemy, horizon=8., *, projected=False):
             best = max(rates, default=0.)
             if best <= 0:
                 continue
-            # Not every shooter gets its ideal armor target: blend the best
-            # matchup with the local composition instead of assuming perfect micro.
             positive = sorted((r for r in rates if r > 0), reverse=True)
             output += .55 * best + .45 * sum(positive) / max(1, len(positive))
             nearest = min(distances)

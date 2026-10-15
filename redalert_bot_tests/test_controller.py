@@ -1,4 +1,3 @@
-"""Contract and lifecycle scenarios; these do not measure RTS win rate."""
 from copy import deepcopy
 import unittest
 
@@ -142,11 +141,7 @@ class ContractTests(unittest.TestCase):
 
 
 class EconomyTimeline:
-    """A deliberately limited mock: validates queues, delay and budget only.
 
-    Income is synthetic. There is no combat/pathfinding/engine here and no
-    resulting win-rate claim. Four documented opening durations are used.
-    """
     def __init__(self, soviet=False, far=False):
         self.tick = 0
         self.cash = 5000.0
@@ -193,7 +188,7 @@ class EconomyTimeline:
 
     def advance(self):
         self.tick += 5
-        self.cash += self.counts("harv") * 8  # synthetic 40 credits/s/harvester
+        self.cash += self.counts("harv") * 8
         for due, o in list(self.delayed):
             if due > self.tick:
                 continue
@@ -266,8 +261,6 @@ class TimelineTests(unittest.TestCase):
                     buildings = [item for _, cmd, item in sim.history if cmd == "build"]
                     self.assertEqual(buildings[:4], ["powr", "proc", "barr" if soviet else "tent", "proc"]
                                      if far else ["powr", "barr" if soviet else "tent", "proc", "proc"])
-                    # The second refinery leaves only 20 excess power: the
-                    # 30-power factory must receive another power plant first.
                     self.assertEqual(buildings[4:6], ["powr", "weap"])
                     self.assertEqual(c.stats["unconfirmed_expiries"], 0)
 

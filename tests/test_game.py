@@ -1,7 +1,3 @@
-"""Unit tests for GameSession. All HTTP is mocked via httpx.MockTransport —
-none of these require a running platform.
-"""
-
 from __future__ import annotations
 
 import json
@@ -69,8 +65,6 @@ def test_fetch_game_state_successfully():
     state = session.state()
 
     assert state.session_id == SESSION_ID
-    # REST's legal_actions/legal_actions_str pair is synthesized into
-    # LegalAction entries, same shape MCP produces natively (see models.py).
     assert [a.action_id for a in state.legal_actions] == ["0", "1", "2"]
     assert [a.label for a in state.legal_actions] == ["a", "b", "c"]
     assert state.next_actions[0].action == "make_move"
@@ -86,8 +80,6 @@ def test_game_server_url_without_scheme_is_normalized():
         return httpx.Response(200, json=state_payload())
 
     client = make_client(handler)
-    # Real control-plane game_server_url values are bare hosts (see
-    # gameAPIService.ts's getGameAPIServerUrl), e.g. "game.example.test".
     session = client.game(session_id=SESSION_ID, game_server_url="game.example.test")
     session.state()
 
@@ -102,7 +94,7 @@ def test_game_server_url_without_scheme_is_normalized():
         ("localhost:8000", "http://localhost:8000"),
         ("127.0.0.1:8000", "http://127.0.0.1:8000"),
         ("[::1]:8000", "http://[::1]:8000"),
-        ("http://game.example.test", "http://game.example.test"),  # explicit scheme kept
+        ("http://game.example.test", "http://game.example.test"),
         ("HTTPS://game.example.test/", "HTTPS://game.example.test"),
     ],
 )

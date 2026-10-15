@@ -1,123 +1,3 @@
-"""Milestone 5 FINAL ACCEPTANCE TEST — developer/manual tool only. NOT RUN
-as part of `pytest` or CI; invoke it by hand, deliberately, against the real
-deployed platform.
-
-RETIRED: like scripts/smoke_game.py, this drives the platform-agent APIs
-(signup, claim, /competitions), which the platform turned off (HTTP 410). It
-no longer runs against the deployed platform; it is kept for reference.
-
-Proves the messaging-enabled contestant workflow works through the actual
-contestant-facing entry point, `python -m agent` — never by calling
-`run_match`/`run_game`/`run_once_concurrent` directly (those are proven at
-the unit level in tests/test_runner.py; this script's whole point is
-end-to-end confidence in the real command a contestant actually runs).
-
-Two scenarios, each played out with two *real, separate* `python -m agent`
-OS subprocesses (one per player) against one shared `repeated_pd`
-competition (messaging enabled by the platform's own default preset — see
-Agent_ACP/backend/src/services/competitionPresets.ts):
-
-  A. Both subprocesses run `examples/basic_agent.py`'s content — no
-     `choose_message` defined anywhere. Proves the default
-     auto-`TERMINATE_MESSAGING` behavior alone is enough to finish a
-     messaging-enabled match, with zero contestant messaging code.
-
-  B. Both subprocesses run `examples/messaging_agent.py`'s content — a
-     stateful agent that actually calls `SendMessage`. Proves the real
-     `send_message` wire path (not just `terminate_messaging`) works
-     end-to-end through the real runtime.
-
-Running two independent `python -m agent` processes at once (one per
-player) also exercises them concurrently — a weaker, more externally
-realistic form of the concurrency Milestone 4C's own smoke test already
-proved at the single-agent/multi-match level (`--concurrent` in
-scripts/smoke_game.py); this script does not re-prove that internal
-mechanism, to keep this test focused on messaging correctness.
-
-Setup mirrors scripts/smoke_game.py: your existing primary agent
-(ALTRUAGENT_CONTROL_URL/ALTRUAGENT_API_KEY) plus one temporary signed-up-
-and-claimed opponent agent (claiming needs a human/admin bearer token,
-prompted via getpass — never echoed, stored, or logged). The temporary
-agent is left claimed afterward; there is no safe deletion endpoint.
-
-Contestant file handling: exactly like smoke_game.py's `--concurrent` mode,
-this temporarily replaces `agent/agent.py`'s *contents* with one of the two
-example files' contents via `scripts/_agent_file_swap.py` (backed up first,
-always restored, regardless of outcome or interruption) — this is the one
-proven-reliable way to make a real `python -m agent` subprocess run specific,
-deterministic contestant logic without touching
-altruagent.worker/supervisor/runner. If a leftover backup from a previous,
-abnormally-terminated run is found, this refuses to guess which file holds
-your real code and asks you to resolve it by hand — see that module's
-docstring.
-
-Bounded by design: explicit per-scenario match-completion timeout, explicit
-subprocess-startup timeout, and subprocess termination + `.wait()` in a
-`finally` block regardless of outcome. Uses `subprocess.Popen`/`.terminate()`/
-`.wait(timeout=...)` throughout — Windows-safe (no POSIX signal handling,
-no shell=True). Never calls the unauthenticated `/games/{id}/cancel` — on a
-timeout, this only stops the subprocesses; the match itself may be left
-incomplete on the server (a known platform gap: there is no safe "abandon
-this match" endpoint today — see the Milestone 5 completion report's
-remaining-platform-work list).
-
-Run (after copying .env.example -> .env and filling in your own agent's
-credentials, exactly like scripts/smoke_game.py):
-
-    python scripts/acceptance_test.py
-
---------------------------------------------------------------------------
-Milestone 6 (`--mcp`): MCP-first gameplay migration acceptance
---------------------------------------------------------------------------
-
-    python scripts/acceptance_test.py --mcp
-
-Proves the generic MCP gameplay contract (altruagent.mcp_game.MCPGameSession
-+ altruagent.runner) actually works against every currently-registered
-adapter in Agent_ACP (confirmed via the earlier read-only audit: exactly two
-— "openspiel", covering tic_tac_toe/repeated_pd/avalon, and "pokemon",
-covering four game-type variants including pokemon_gen9ou_draft — no other
-adapter/game exists in the workspace, so none are invented here):
-
-  A. tic_tac_toe — get_game_state / get_legal_actions / LegalAction /
-     play_action through MCPGameSession directly, confirms state_version
-     strictly increases across two calls, then resigns (bounded, no need to
-     complete a full match to prove the wire mechanics).
-  B. repeated_pd — reuses the existing `default`/`messaging` scenarios
-     above verbatim: they already exercise MCP transparently (python -m
-     agent's production path is MCP unconditionally after this migration,
-     with zero scenario-code changes needed), including a real messaging
-     phase (send_message/terminate through MCP, then real moves).
-  C. avalon — 5 real participants (the primary agent + 4 temporary ones).
-     Confirms real MCP state/legal actions for whichever seat's turn it
-     actually is, submits one legal action, confirms state_version
-     advanced. Does not play to completion (a full 5-player match is out
-     of scope for this proof).
-  D. pokemon_gen9ou_draft — 2 participants. Confirms real MCP state/
-     structured legal actions (`draft_pick:<card_id>`-shaped, not bare
-     ints), submits one structured action, confirms state_version advanced.
-  E. A full Pokémon battle flow (draft -> teambuild -> moves/switches to
-     completion) is NOT implemented here — it needs a reachable Showdown
-     websocket (`GAMEAPI_POKEMON_SHOWDOWN_WS` on the gameapi deployment;
-     see Agent_ACP/gameapi/docs/pokemon-runtime.md), which this script has
-     no way to detect or provision from the contestant side. `run_pokemon()`
-     below stops after D and prints exactly this as the environment
-     blocker, rather than silently skipping it.
-
-Every check above proves "no REST gameplay fallback" the same structural
-way tests/test_no_rest_fallback.py does at the unit level (MCPGameSession
-and GameSession share no method names except a zero-arg `resign()`, and
-Match.game() only ever returns MCPGameSession) — this script additionally
-demonstrates it operationally by only ever calling MCPGameSession methods
-for A/C/D, and by python -m agent for B (whose only gameplay path is MCP
-after this migration, per altruagent/runner.py).
-
-Setup mirrors the rest of this script: real signup/claim of temporary
-agents, human/admin bearer token(s) via getpass (never echoed/logged/
-stored), cleanup via resign or natural completion only — never
-`/games/{id}/cancel`.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -130,17 +10,16 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-# Allow running this script directly without having pip-installed the project.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-import httpx  # noqa: E402
+import httpx
 
-from altruagent.client import AltruAgentClient  # noqa: E402
+from altruagent.client import AltruAgentClient
 
-from _agent_file_swap import AgentFileSwapError, restore_real_agent, temporary_agent  # noqa: E402
+from _agent_file_swap import AgentFileSwapError, restore_real_agent, temporary_agent
 
-NUM_ROUNDS = 3  # small on purpose — bounds how many messaging<->moving cycles this test waits through
+NUM_ROUNDS = 3
 HTTP_TIMEOUT_SECONDS = 10.0
 COMPETITION_POLL_TIMEOUT_SECONDS = 60.0
 COMPETITION_POLL_INTERVAL_SECONDS = 3.0
@@ -152,14 +31,13 @@ SUBPROCESS_TERMINATE_TIMEOUT_SECONDS = 10.0
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
 SCENARIOS = {
-    "default": EXAMPLES_DIR / "basic_agent.py",       # no choose_message -> auto-terminate
-    "messaging": EXAMPLES_DIR / "messaging_agent.py",  # real SendMessage flow
+    "default": EXAMPLES_DIR / "basic_agent.py",
+    "messaging": EXAMPLES_DIR / "messaging_agent.py",
 }
 
 
 class AcceptanceTestError(RuntimeError):
-    """Raised for any acceptance-test failure. Message is always safe to
-    print — never include secrets when raising this."""
+    pass
 
 
 def _checkpoint(label: str) -> None:
@@ -186,7 +64,6 @@ def _json_or_fail(response: httpx.Response, what: str) -> dict:
     return body
 
 
-# -- agent signup/claim/competition setup (same shape as scripts/smoke_game.py) --
 
 
 def signup_temporary_agent(http: httpx.Client, control_url: str) -> tuple[str, str, str]:
@@ -213,12 +90,7 @@ def claim_temporary_agent(http: httpx.Client, control_url: str, claim_token: str
 
 
 def create_repeated_pd_competition(http: httpx.Client, control_url: str, human_token: str) -> str:
-    """POST /admin/competitions/create with preset=repeated_pd.
 
-    The preset (Agent_ACP backend/src/services/competitionPresets.ts) forces
-    messaging_enabled=True and max_participants=2 — exactly what this test
-    needs, with no messaging_config assembled by hand.
-    """
     response = http.post(
         f"{control_url}/admin/competitions/create",
         json={"preset": "repeated_pd", "num_rounds": NUM_ROUNDS},
@@ -238,14 +110,7 @@ def join_competition(client: AltruAgentClient, session_id: str) -> None:
 def create_plain_competition(
     http: httpx.Client, control_url: str, human_token: str, *, game_type: str, max_participants: int
 ) -> str:
-    """POST /admin/competitions/create with a bare game_type — no preset.
 
-    Presets only exist for repeated_pd/avalon's messaging_config (see
-    Agent_ACP backend/src/services/competitionPresets.ts); every other
-    game_type (tic_tac_toe, the pokemon_* variants) is created this way,
-    same as scripts/smoke_game.py's create_competition already does for
-    tic_tac_toe.
-    """
     response = http.post(
         f"{control_url}/admin/competitions/create",
         json={"game_type": game_type, "max_participants": max_participants},
@@ -304,12 +169,8 @@ def wait_for_completed(poll: Callable[[], dict]) -> dict:
     )
 
 
-# -- contestant file swap (shared with smoke_game.py --concurrent — see
-# scripts/_agent_file_swap.py for the install/restore mechanics and the
-# safety rules around a leftover backup from a crashed prior run) -----------
 
 
-# -- one scenario ------------------------------------------------------------
 
 
 def run_scenario(
@@ -357,12 +218,6 @@ def run_scenario(
                         "ALTRUAGENT_CONTROL_URL": control_url,
                         "ALTRUAGENT_API_KEY": api_key,
                     }
-                    # Inherit this process's stdout/stderr rather than capturing
-                    # to a pipe nobody reads: a captured-but-undrained pipe can
-                    # fill up and block a chatty child indefinitely, and the
-                    # failure message below promises the child's output is
-                    # visible "above/below" — which is only true if it was
-                    # never captured in the first place.
                     process = subprocess.Popen(
                         [sys.executable, "-m", "agent"],
                         cwd=str(REPO_ROOT),
@@ -371,8 +226,6 @@ def run_scenario(
                     processes.append(process)
                     print(f"[{scenario}] started `python -m agent` for {label}, pid={process.pid}")
 
-                # Startup sanity check: both processes must still be alive shortly
-                # after launch (an immediate exit means a config/import error).
                 time.sleep(min(SUBPROCESS_STARTUP_TIMEOUT_SECONDS, 5.0))
                 for process in processes:
                     if process.poll() is not None:
@@ -403,18 +256,14 @@ def run_scenario(
         _fail(str(exc))
 
 
-# -- Milestone 6: direct MCPGameSession checks (--mcp) -----------------------
 
 CURRENT_ACTOR_POLL_TIMEOUT_SECONDS = 30.0
 CURRENT_ACTOR_POLL_INTERVAL_SECONDS = 2.0
 
 
 def _find_current_actor(clients: list[AltruAgentClient], *, session_id: str, game_server_url: str):
-    """Poll every given client's MCPGameSession.get_state() until exactly one
-    reports is_current_actor=True, and return (that client's game session,
-    its state). Bounded — never loops forever.
-    """
-    from altruagent.mcp_game import MCPGameSession  # local import: only needed here
+
+    from altruagent.mcp_game import MCPGameSession
 
     sessions: list[MCPGameSession] = [
         client.mcp_game(session_id=session_id, game_server_url=game_server_url) for client in clients
@@ -475,8 +324,6 @@ def run_tic_tac_toe_mcp_check(primary: AltruAgentClient, control_url: str, human
             )
         _checkpoint(f"MCP play_action: state_version {state_version_before} -> {state_version_after}")
 
-        # Bounded cleanup: resign rather than play out a full match — this
-        # check's job is proving the MCP wire mechanics, not a real game.
         mover_session.resign()
         wait_for_completed(lambda: http.get(f"{control_url}/competitions/{session_id}").json())
         _checkpoint("tic_tac_toe MCP check complete (resigned to end cleanly)")
@@ -598,7 +445,7 @@ def run_pokemon_mcp_check(primary: AltruAgentClient, control_url: str, human_tok
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description='Milestone 5 FINAL ACCEPTANCE TEST — developer/manual tool only. NOT RUN\nas part of `pytest` or CI; invoke it by hand, deliberately, against the real\ndeployed platform.\n\nRETIRED: like scripts/smoke_game.py, this drives the platform-agent APIs\n(signup, claim, /competitions), which the platform turned off (HTTP 410). It\nno longer runs against the deployed platform; it is kept for reference.\n\nProves the messaging-enabled contestant workflow works through the actual\ncontestant-facing entry point, `python -m agent` — never by calling\n`run_match`/`run_game`/`run_once_concurrent` directly (those are proven at\nthe unit level in tests/test_runner.py; this script\'s whole point is\nend-to-end confidence in the real command a contestant actually runs).\n\nTwo scenarios, each played out with two *real, separate* `python -m agent`\nOS subprocesses (one per player) against one shared `repeated_pd`\ncompetition (messaging enabled by the platform\'s own default preset — see\nAgent_ACP/backend/src/services/competitionPresets.ts):\n\n  A. Both subprocesses run `examples/basic_agent.py`\'s content — no\n     `choose_message` defined anywhere. Proves the default\n     auto-`TERMINATE_MESSAGING` behavior alone is enough to finish a\n     messaging-enabled match, with zero contestant messaging code.\n\n  B. Both subprocesses run `examples/messaging_agent.py`\'s content — a\n     stateful agent that actually calls `SendMessage`. Proves the real\n     `send_message` wire path (not just `terminate_messaging`) works\n     end-to-end through the real runtime.\n\nRunning two independent `python -m agent` processes at once (one per\nplayer) also exercises them concurrently — a weaker, more externally\nrealistic form of the concurrency Milestone 4C\'s own smoke test already\nproved at the single-agent/multi-match level (`--concurrent` in\nscripts/smoke_game.py); this script does not re-prove that internal\nmechanism, to keep this test focused on messaging correctness.\n\nSetup mirrors scripts/smoke_game.py: your existing primary agent\n(ALTRUAGENT_CONTROL_URL/ALTRUAGENT_API_KEY) plus one temporary signed-up-\nand-claimed opponent agent (claiming needs a human/admin bearer token,\nprompted via getpass — never echoed, stored, or logged). The temporary\nagent is left claimed afterward; there is no safe deletion endpoint.\n\nContestant file handling: exactly like smoke_game.py\'s `--concurrent` mode,\nthis temporarily replaces `agent/agent.py`\'s *contents* with one of the two\nexample files\' contents via `scripts/_agent_file_swap.py` (backed up first,\nalways restored, regardless of outcome or interruption) — this is the one\nproven-reliable way to make a real `python -m agent` subprocess run specific,\ndeterministic contestant logic without touching\naltruagent.worker/supervisor/runner. If a leftover backup from a previous,\nabnormally-terminated run is found, this refuses to guess which file holds\nyour real code and asks you to resolve it by hand — see that module\'s\ndocstring.\n\nBounded by design: explicit per-scenario match-completion timeout, explicit\nsubprocess-startup timeout, and subprocess termination + `.wait()` in a\n`finally` block regardless of outcome. Uses `subprocess.Popen`/`.terminate()`/\n`.wait(timeout=...)` throughout — Windows-safe (no POSIX signal handling,\nno shell=True). Never calls the unauthenticated `/games/{id}/cancel` — on a\ntimeout, this only stops the subprocesses; the match itself may be left\nincomplete on the server (a known platform gap: there is no safe "abandon\nthis match" endpoint today — see the Milestone 5 completion report\'s\nremaining-platform-work list).\n\nRun (after copying .env.example -> .env and filling in your own agent\'s\ncredentials, exactly like scripts/smoke_game.py):\n\n    python scripts/acceptance_test.py\n\n--------------------------------------------------------------------------\nMilestone 6 (`--mcp`): MCP-first gameplay migration acceptance\n--------------------------------------------------------------------------\n\n    python scripts/acceptance_test.py --mcp\n\nProves the generic MCP gameplay contract (altruagent.mcp_game.MCPGameSession\n+ altruagent.runner) actually works against every currently-registered\nadapter in Agent_ACP (confirmed via the earlier read-only audit: exactly two\n— "openspiel", covering tic_tac_toe/repeated_pd/avalon, and "pokemon",\ncovering four game-type variants including pokemon_gen9ou_draft — no other\nadapter/game exists in the workspace, so none are invented here):\n\n  A. tic_tac_toe — get_game_state / get_legal_actions / LegalAction /\n     play_action through MCPGameSession directly, confirms state_version\n     strictly increases across two calls, then resigns (bounded, no need to\n     complete a full match to prove the wire mechanics).\n  B. repeated_pd — reuses the existing `default`/`messaging` scenarios\n     above verbatim: they already exercise MCP transparently (python -m\n     agent\'s production path is MCP unconditionally after this migration,\n     with zero scenario-code changes needed), including a real messaging\n     phase (send_message/terminate through MCP, then real moves).\n  C. avalon — 5 real participants (the primary agent + 4 temporary ones).\n     Confirms real MCP state/legal actions for whichever seat\'s turn it\n     actually is, submits one legal action, confirms state_version\n     advanced. Does not play to completion (a full 5-player match is out\n     of scope for this proof).\n  D. pokemon_gen9ou_draft — 2 participants. Confirms real MCP state/\n     structured legal actions (`draft_pick:<card_id>`-shaped, not bare\n     ints), submits one structured action, confirms state_version advanced.\n  E. A full Pokémon battle flow (draft -> teambuild -> moves/switches to\n     completion) is NOT implemented here — it needs a reachable Showdown\n     websocket (`GAMEAPI_POKEMON_SHOWDOWN_WS` on the gameapi deployment;\n     see Agent_ACP/gameapi/docs/pokemon-runtime.md), which this script has\n     no way to detect or provision from the contestant side. `run_pokemon()`\n     below stops after D and prints exactly this as the environment\n     blocker, rather than silently skipping it.\n\nEvery check above proves "no REST gameplay fallback" the same structural\nway tests/test_no_rest_fallback.py does at the unit level (MCPGameSession\nand GameSession share no method names except a zero-arg `resign()`, and\nMatch.game() only ever returns MCPGameSession) — this script additionally\ndemonstrates it operationally by only ever calling MCPGameSession methods\nfor A/C/D, and by python -m agent for B (whose only gameplay path is MCP\nafter this migration, per altruagent/runner.py).\n\nSetup mirrors the rest of this script: real signup/claim of temporary\nagents, human/admin bearer token(s) via getpass (never echoed/logged/\nstored), cleanup via resign or natural completion only — never\n`/games/{id}/cancel`.\n', formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--mcp",
         action="store_true",
@@ -609,14 +456,11 @@ def main() -> int:
 
     try:
         primary = AltruAgentClient()
-    except Exception as exc:  # ConfigurationError
+    except Exception as exc:
         print(f"Configuration error: {exc}")
         return 1
 
     control_url = primary.control_url
-    # AltruAgentClient() already called load_dotenv(), which populates
-    # os.environ from .env if it wasn't already set — read it back the same
-    # way rather than reaching into the client's private _api_key attribute.
     primary_api_key = os.environ.get("ALTRUAGENT_API_KEY")
     if not primary_api_key:
         print("Configuration error: ALTRUAGENT_API_KEY is not set.")
@@ -672,9 +516,6 @@ def main() -> int:
         print(f"\nACCEPTANCE TEST FAILED: {exc}")
         return 1
     finally:
-        # Idempotent no-op in the normal case — run_scenario's own
-        # temporary_agent(...) context manager already restores agent.py
-        # unconditionally. Kept as a harmless extra safety net.
         restore_real_agent()
         primary.close()
 

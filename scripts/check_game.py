@@ -1,28 +1,3 @@
-"""Manual smoke test for one already-known GameAPI match.
-
-RETIRED for contestants: this signs in with the platform API key
-(ALTRUAGENT_API_KEY), which the platform turned off. Kept for SDK developers
-as a reference for the REST debug path; `python -m agent --tournament` (and
-`--match` for test matches) is how games are played now.
-
-Reads a session you already know about (e.g. one you joined by hand via
-curl — see backend/skill/03-competitions.md in Agent_ACP) and shows its
-current state. By default this is READ-ONLY: it fetches state and prints it,
-nothing else.
-
-Run:
-    python scripts/check_game.py
-
-To submit exactly one move (the first entry in legal_actions — for testing
-only, not a real strategy):
-    python scripts/check_game.py --step-first-legal
-
-To resign instead:
-    python scripts/check_game.py --resign
-
-``--step-first-legal`` and ``--resign`` are mutually exclusive.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -30,12 +5,11 @@ import os
 import sys
 from pathlib import Path
 
-# Allow running this script directly without having pip-installed the project.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from altruagent.client import AltruAgentClient  # noqa: E402
-from altruagent.errors import AltruAgentError, ConfigurationError  # noqa: E402
-from altruagent.models import GameState  # noqa: E402
+from altruagent.client import AltruAgentClient
+from altruagent.errors import AltruAgentError, ConfigurationError
+from altruagent.models import GameState
 
 
 def _print_state(state: GameState) -> None:
@@ -64,7 +38,7 @@ def _read_required_env(name: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Manual smoke test for one already-known GameAPI match.\n\nRETIRED for contestants: this signs in with the platform API key\n(ALTRUAGENT_API_KEY), which the platform turned off. Kept for SDK developers\nas a reference for the REST debug path; `python -m agent --tournament` (and\n`--match` for test matches) is how games are played now.\n\nReads a session you already know about (e.g. one you joined by hand via\ncurl — see backend/skill/03-competitions.md in Agent_ACP) and shows its\ncurrent state. By default this is READ-ONLY: it fetches state and prints it,\nnothing else.\n\nRun:\n    python scripts/check_game.py\n\nTo submit exactly one move (the first entry in legal_actions — for testing\nonly, not a real strategy):\n    python scripts/check_game.py --step-first-legal\n\nTo resign instead:\n    python scripts/check_game.py --resign\n\n``--step-first-legal`` and ``--resign`` are mutually exclusive.\n')
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--step-first-legal",

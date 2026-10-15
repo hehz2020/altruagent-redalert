@@ -1,38 +1,3 @@
-"""Red Alert for the example LLM agent: the model decides each batch of orders.
-
-Red Alert (``red_alert``) is real time: there are no turns, the world runs at
-25 ticks per second whether or not you act, and a move is a batch of 1-20
-orders (``{"type": "orders", "orders": [...]}``) sent whenever the agent is
-ready. ``examples/llm_agent.py`` hands every Red Alert decision to a
-``RedAlertPlayer``, one per match.
-
-This is a port of the platform's own Red Alert test agent (Agent_ACP
-``gameapi/scripts/redalert_llm_brain.py``), with the same prompts and the same
-safeguards, measured in live matches:
-
-1. The system prompt states the goal, the real-time rules, every order's fields
-   (from ``context.game_config``'s ``order_schema`` when the runner fetched it)
-   and the opening build order. The user prompt is a compact JSON view of this
-   state (at most ~12,000 characters; lists are capped and the cut is noted).
-2. The model answers through a strict JSON schema with one shape per order
-   command, so every order is well formed; each order is still checked here
-   (ids, cells, counts), and GameAPI checks everything again.
-3. An empty batch, or any decision the model can't make (a provider error, an
-   unusable answer, the call cap), sends nothing: the player returns
-   ``altruagent.WAIT`` and is asked again on the next view. Real-time speed is
-   part of the game, so a slow or failing model simply acts less. After a
-   provider error the model is left alone for 5 s, doubling up to 60 s.
-4. Refusals are fed back. ``on_action_result`` gets every ``play_action``
-   answer: a batch refused as a whole (``INVALID_ACTION``, which never appears
-   in ``last_orders``) is shown to the model with its reasons, and an order
-   refused again and again for the same reason is listed, then dropped before
-   sending while the reason still holds (up to 30 s at a time), so the model
-   can't spend a match repeating one refused order.
-5. Attacking is always among the suggestions: the server's ready-made attack
-   (``legal_actions.attack_now``) is put in front of the model whenever the
-   seat has combat units. Buildings queued several times are pointed out.
-"""
-
 from __future__ import annotations
 
 import json
@@ -45,7 +10,6 @@ from altruagent import WAIT, DecisionContext, GameState, WithReasoning
 from .base import object_schema
 from .providers import LLMProvider, ProviderError
 
-# A cost guard sized for a whole 20-minute match at one answer every 0.5 s.
 MAX_CALLS = 2400
 
 REASONING_MAX_CHARS = 300
@@ -61,9 +25,6 @@ MAX_ORDER_RESULTS_SHOWN = 20
 MAX_PROBLEMS_SHOWN = 10
 DETAIL_MAX_CHARS = 80
 
-# Batches refused as a whole (play_action INVALID_ACTION: nothing was sent, and
-# the batch never shows in last_orders or recent_order_problems). The newest are
-# shown to the model so it can see it is repeating a refused move.
 MAX_REFUSED_SHOWN = 3
 REFUSED_DETAIL_MAX_CHARS = 300
 REFUSED_NOTE = (
@@ -71,12 +32,6 @@ REFUSED_NOTE = (
     "they do not appear in last_orders. Do not send the same orders again. Read "
     "each reason and choose different orders (other units, ids, items or cells)."
 )
-# Orders refused again and again, tracked by exact content and refusal reason.
-# After REPEAT_WARN_AFTER identical refusals an order is listed in the prompt;
-# after BLOCK_AFTER it is also dropped before sending while the reason still
-# holds (checked against the state where possible) and for at most
-# BLOCK_SECONDS since the last refusal, after which one more try goes out. A
-# refusal older than REFUSAL_FORGET_SECONDS is forgotten.
 REPEAT_WARN_AFTER = 2
 BLOCK_AFTER = 3
 BLOCK_SECONDS = 30.0
@@ -87,7 +42,6 @@ REPEATS_NOTE = (
     "send it again until that reason no longer holds; send something else. Orders "
     "marked blocked are dropped before sending."
 )
-# The same building queued this many times or more, not yet ready.
 OVERQUEUE_WARN_AT = 3
 OVERQUEUE_NOTE = (
     "These buildings are already queued several times. Every extra build order "
@@ -99,15 +53,12 @@ SUGGESTED_ATTACK_NOTE = (
     "the enemy's buildings, so add it to your orders whenever you have a few combat "
     "units (you may change the units or the target)."
 )
-# A whole-batch refusal's detail: "...: [0] place: not_ready (spen ...); [1] ..."
 _REFUSAL_ROW = re.compile(r"\[(\d+)\] ([a-z_]+): ([a-z_]+)(?: \(([^)]*)\))?")
-# When the user prompt is too long: sections dropped first, then lists halved.
 LOW_PRIORITY_SECTIONS = ("events", "your_last_reasoning", "recent_order_problems", "last_orders", "military", "limits")
 SHRINKABLE_LISTS = ("enemies", "units", "buildings", "available_production", "production")
 MIN_LIST_SHOWN = 5
 MAX_ITEM_NAME = 32
 
-# Fallback reasons (counted in stats()).
 FALLBACK_CAP = "cap"
 FALLBACK_ERROR = "error"
 FALLBACK_BAD_ANSWER = "bad_answer"
@@ -124,8 +75,6 @@ BARRACKS = ("tent", "barr")
 REFINERY = "proc"
 INFANTRY = "e1"
 
-# cmd -> (required fields, optional fields). The allowed fields come from the
-# game config's order_schema when the runner fetched it; the required ones from here.
 ORDER_FIELDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "move": (frozenset({"units", "to"}), frozenset({"queued"})),
     "attack_move": (frozenset({"units", "to"}), frozenset({"queued"})),
@@ -149,7 +98,6 @@ ORDER_FIELDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 }
 DEFAULT_STANCES = ("hold_fire", "return_fire", "defend", "attack_anything")
 
-# JSON-schema types of the order fields, for the model's answer schema.
 _INTS = {"type": "array", "items": {"type": "integer"}}
 FIELD_SCHEMAS: dict[str, dict] = {
     "units": _INTS,
@@ -164,7 +112,6 @@ FIELD_SCHEMAS: dict[str, dict] = {
     "on": {"type": "boolean"},
 }
 
-# One example per command family (ids and cells are placeholders).
 ORDER_EXAMPLES = (
     {"cmd": "deploy", "units": [101]},
     {"cmd": "attack_move", "units": [120, 121, 122], "to": [50, 52]},
@@ -177,7 +124,6 @@ ORDER_EXAMPLES = (
     {"cmd": "repair", "building": 131},
 )
 
-# Used only when the game config does not carry the text.
 FALLBACK_WIN = (
     "You win by destroying every enemy building and the enemy's MCV (base "
     "vehicle); units left over do not matter. Or the enemy resigns."
@@ -187,7 +133,6 @@ FALLBACK_REALTIME = "The game runs in real time and never waits for you: while y
 FALLBACK_MAP_TERMS = "bounds [x, y, w, h] = playable cells"
 
 
-# --- Small helpers -------------------------------------------------------------
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -195,7 +140,7 @@ def _dict(value: Any) -> dict[str, Any]:
 
 
 def _text(value: Any, fallback: str, limit: int = CONFIG_TEXT_MAX_CHARS) -> str:
-    """A config string, whitespace-collapsed and trimmed; ``fallback`` if absent."""
+
     text = " ".join(value.split()) if isinstance(value, str) else ""
     return (text or fallback)[:limit]
 
@@ -213,19 +158,19 @@ def _dumps(value: Any) -> str:
 
 
 def trim_reasoning(value: Any) -> str | None:
-    """The model's public reasoning, whitespace collapsed, at most 300 characters."""
+
     if not isinstance(value, str):
         return None
     return " ".join(value.split())[:REASONING_MAX_CHARS] or None
 
 
 def backoff_seconds(errors_in_row: int) -> float:
-    """How long to leave the model alone after provider errors in a row: 5, 10, 20, 40, then 60 s."""
+
     return min(BACKOFF_MAX_SECONDS, BACKOFF_FIRST_SECONDS * 2 ** min(max(0, errors_in_row - 1), 8))
 
 
 def _cell(obj: Any) -> tuple[int, int] | None:
-    """A cell from ``{"x", "y"}`` or ``[x, y]``."""
+
     if isinstance(obj, (list, tuple)) and len(obj) >= 2:
         x, y = obj[0], obj[1]
     elif isinstance(obj, dict):
@@ -256,7 +201,7 @@ def _obs_tick(state: dict[str, Any]) -> int | None:
 
 
 def find_map_info(config: dict[str, Any] | None, map_id: str | None) -> dict[str, Any] | None:
-    """The map's entry (width/height/bounds/spawns) in ``get_game_config``'s ``rules.maps``."""
+
     entry = _dict(_dict(_dict(config).get("rules")).get("maps")).get(map_id or "")
     return entry if isinstance(entry, dict) else None
 
@@ -267,14 +212,14 @@ def _spawns(map_info: dict[str, Any] | None) -> list[tuple[int, int]]:
 
 
 def choose_enemy_spawn(spawns: list[tuple[int, int]], base: tuple[int, int] | None) -> tuple[int, int] | None:
-    """The spawn farthest from our base (ties: the first in map order)."""
+
     if not spawns or base is None:
         return None
     return max(spawns, key=lambda s: (s[0] - base[0]) ** 2 + (s[1] - base[1]) ** 2)
 
 
 def playable_cells(bounds: Any) -> dict[str, list[int]] | None:
-    """``map.bounds`` ``[x, y, width, height]`` as the playable ``[min, max]`` per axis."""
+
     if not (isinstance(bounds, list) and len(bounds) == 4 and all(map(_is_int, bounds))):
         return None
     x, y, width, height = bounds
@@ -283,11 +228,10 @@ def playable_cells(bounds: Any) -> dict[str, list[int]] | None:
     return {"x": [x, x + width - 1], "y": [y, y + height - 1]}
 
 
-# --- Order fields, the answer schema and validation ------------------------------
 
 
 def order_fields(config: dict[str, Any] | None) -> dict[str, tuple[frozenset[str], frozenset[str]]]:
-    """cmd -> (required, optional) fields: the config's ``order_schema.orders`` when present, else ORDER_FIELDS."""
+
     orders = _dict(_dict(_dict(config).get("order_schema")).get("orders"))
     if not orders:
         return dict(ORDER_FIELDS)
@@ -303,8 +247,7 @@ def order_fields(config: dict[str, Any] | None) -> dict[str, tuple[frozenset[str
 
 
 def answer_schema(fields: dict[str, tuple[frozenset[str], frozenset[str]]]) -> dict:
-    """The model's strict answer: ``orders`` (one object shape per command;
-    optional fields are present but may be null) and ``reasoning_summary``."""
+
     shapes = []
     for cmd, (required, optional) in fields.items():
         props: dict[str, Any] = {"cmd": {"type": "string", "enum": [cmd]}}
@@ -337,11 +280,11 @@ def _field_ok(name: str, value: Any, limits: dict[str, int]) -> bool:
         return isinstance(value, bool)
     if name == "stance":
         return isinstance(value, str) and bool(value.strip())
-    return True  # a field this guard does not know: the server decides
+    return True
 
 
 def order_ok(order: Any, fields: dict[str, tuple[frozenset[str], frozenset[str]]], limits: dict[str, int]) -> bool:
-    """Cheap shape check of one order (the server rejects unknown fields too)."""
+
     if not isinstance(order, dict):
         return False
     cmd = order.get("cmd")
@@ -352,21 +295,19 @@ def order_ok(order: Any, fields: dict[str, tuple[frozenset[str], frozenset[str]]
     if not required <= keys or keys - required - optional:
         return False
     if cmd == "attack" and ("target" in order) == ("to" in order):
-        return False  # exactly one of target / to
+        return False
     return all(_field_ok(k, order[k], limits) for k in keys)
 
 
 def validate_orders(
     raw: list[Any], fields: dict[str, tuple[frozenset[str], frozenset[str]]], limits: dict[str, int]
 ) -> tuple[list[dict[str, Any]], int]:
-    """(the well-formed orders, cut to max_orders_per_batch; how many were dropped).
-    Null fields (the schema's way of leaving an optional field out) are removed first."""
+
     cleaned = [{k: v for k, v in o.items() if v is not None} if isinstance(o, dict) else o for o in raw]
     batch = [o for o in cleaned if order_ok(o, fields, limits)][: limits["max_orders_per_batch"]]
     return batch, len(raw) - len(batch)
 
 
-# --- Prompts ----------------------------------------------------------------------
 
 _FIELD_ORDER = ("units", "building", "item", "target", "to", "at", "count", "stance")
 
@@ -408,8 +349,7 @@ def _map_terms(config: dict[str, Any]) -> str:
 
 
 def build_system_prompt(config: dict[str, Any] | None) -> str:
-    """The standing instructions: goal, real time, order formats, build basics and
-    the answer format. Rule text comes from the game config when the runner fetched it."""
+
     config = _dict(config)
     results = _dict(config.get("results_policy"))
     realtime = _dict(config.get("realtime"))
@@ -472,7 +412,7 @@ def build_system_prompt(config: dict[str, Any] | None) -> str:
 
 
 def _item_facts(name: str, rules: dict[str, Any]) -> dict[str, Any]:
-    """An available_production entry with cost/power/build time from the rules."""
+
     key = name.lower()
     info = _dict(_dict(rules.get("buildings")).get(key)) or _dict(_dict(rules.get("units")).get(key))
     entry: dict[str, Any] = {"item": key}
@@ -551,7 +491,7 @@ def _sections(
     refused_in_row: int = 0,
     repeats: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, int]]:
-    """The user prompt's sections in order, and how many list entries were cut."""
+
     obs = _dict(state.get("observation"))
     rules = _dict(_dict(config).get("rules"))
     time_info = _dict(state.get("time"))
@@ -586,7 +526,6 @@ def _sections(
         "your_last_reasoning": last_reasoning,
         "limits": _limits(state),
     }
-    # Right after the clock, and never dropped for space.
     warnings: dict[str, Any] = {}
     if refused:
         warnings["your_refused_batches"] = {"in_a_row": refused_in_row, "reasons_newest_last": list(refused), "note": REFUSED_NOTE}
@@ -619,9 +558,7 @@ def build_user_prompt(
     repeats: list[dict[str, Any]] | None = None,
     max_chars: int = USER_PROMPT_MAX_CHARS,
 ) -> str:
-    """A compact JSON view of ``state`` (GameAPI's raw payload) for the model, at
-    most ``max_chars``. Lists are capped and the cut is noted; when the text is
-    still too long, low-priority sections are dropped first, then lists shortened."""
+
     caps = {
         "units": MAX_UNITS_SHOWN,
         "buildings": MAX_BUILDINGS_SHOWN,
@@ -655,11 +592,10 @@ def build_user_prompt(
         return text[:max_chars]
 
 
-# --- Repeated refusals --------------------------------------------------------------
 
 
 def order_key(order: dict[str, Any]) -> str:
-    """An order's identity for counting refusals: its content without ``queued``, unit ids sorted."""
+
     body = {k: v for k, v in order.items() if k != "queued"}
     if isinstance(body.get("units"), list):
         body["units"] = sorted(body["units"], key=str)
@@ -667,15 +603,14 @@ def order_key(order: dict[str, Any]) -> str:
 
 
 def refusal_rows(detail: Any) -> list[tuple[int, str, str, str | None]]:
-    """(index, cmd, reason, detail) for each order in a whole-batch refusal's detail text."""
+
     if not isinstance(detail, str):
         return []
     return [(int(m.group(1)), m.group(2), m.group(3), m.group(4)) for m in _REFUSAL_ROW.finditer(detail)]
 
 
 def reason_still_holds(entry: dict[str, Any], state: dict[str, Any]) -> bool:
-    """Whether a refused order would most likely be refused again for the same
-    reason, judged from the current state (True when it cannot be judged)."""
+
     obs = _dict(state.get("observation"))
     order, reason = entry["order"], entry["reason"]
     item = str(order.get("item") or "").lower()
@@ -690,7 +625,7 @@ def reason_still_holds(entry: dict[str, Any], state: dict[str, Any]) -> bool:
 
 
 def over_queued(state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Buildings queued OVERQUEUE_WARN_AT times or more and not ready yet."""
+
     counts: dict[str, int] = {}
     for p in _list(_dict(state.get("observation")), "production"):
         if str(p.get("queue")).lower() in ("building", "defense") and not p.get("ready"):
@@ -699,14 +634,10 @@ def over_queued(state: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"item": i, "queued": n} for i, n in sorted(counts.items(), key=lambda kv: -kv[1]) if n >= OVERQUEUE_WARN_AT]
 
 
-# --- The player ---------------------------------------------------------------------
 
 
 class RedAlertPlayer:
-    """One Red Alert match's decisions. ``choose_action`` returns
-    ``WithReasoning({"type": "orders", "orders": [...]}, reasoning)`` or
-    ``WAIT``; ``on_action_result`` learns from each ``play_action`` answer.
-    """
+
 
     def __init__(
         self,
@@ -733,12 +664,8 @@ class RedAlertPlayer:
         self._map_id: str | None = None
         self._map_info: dict[str, Any] | None = None
         self._last_reasoning: str | None = None
-        # Batches refused as a whole, newest last, and how many in a row;
-        # cleared by the next accepted batch.
         self._refused: list[str] = []
         self._refused_in_row = 0
-        # The orders last sent (the batch play_action answers next), and every
-        # order refused recently: order_key -> {order, reason, detail, count, last}.
         self._last_sent: list[dict[str, Any]] = []
         self._refusals: dict[str, dict[str, Any]] = {}
         self._errors_in_row = 0
@@ -754,12 +681,11 @@ class RedAlertPlayer:
             "orders_blocked": self.orders_blocked,
         }
 
-    # -- decisions -------------------------------------------------------------------
 
     def choose_action(self, state: GameState, context: DecisionContext):
         raw = state.raw
         if not isinstance(raw.get("observation"), dict):
-            return WAIT  # nothing to look at yet
+            return WAIT
         self._use_config(context.game_config)
         if self.calls >= self.max_calls:
             return self._fallback(FALLBACK_CAP)
@@ -769,8 +695,6 @@ class RedAlertPlayer:
             raw,
             self._map(raw),
             self._config,
-            # Its own last plan is left out while its batches are being refused:
-            # fed back, it tends to lock the model into the same refused move.
             last_reasoning=None if self._refused else self._last_reasoning,
             refused=self._refused,
             refused_in_row=self._refused_in_row,
@@ -798,8 +722,6 @@ class RedAlertPlayer:
         if proposed and not orders:
             return self._fallback(FALLBACK_BAD_ANSWER, f"all {len(proposed)} orders malformed")
         self.ok += 1
-        # Orders refused BLOCK_AFTER times for a reason that still holds are not
-        # sent (the next prompt marks them blocked); the rest go out.
         orders = self._drop_blocked(orders, raw)
         reasoning = trim_reasoning(answer.get("reasoning_summary"))
         self._last_reasoning = reasoning
@@ -813,17 +735,13 @@ class RedAlertPlayer:
     def _fallback(self, reason: str, detail: str | None = None):
         count = self.fallbacks.get(reason, 0) + 1
         self.fallbacks[reason] = count
-        # cap and backoff repeat on every decision while they last: log the first.
         if reason not in (FALLBACK_CAP, FALLBACK_BACKOFF) or count == 1:
             self._log(f"[llm] red_alert: FALLBACK ({reason}), nothing sent" + (f": {detail[:200]}" if detail else ""))
         return WAIT
 
-    # -- play_action answers -------------------------------------------------------------
 
     def on_action_result(self, result: dict, context: DecisionContext) -> None:
-        """A batch refused as a whole is remembered with its reasons (the server
-        records it nowhere else); each refused order is counted; an accepted
-        batch clears the refused list."""
+
         sent = self._last_sent
         if result.get("error") == "INVALID_ACTION":
             detail = _text(result.get("detail"), "no order was valid", REFUSED_DETAIL_MAX_CHARS)
@@ -834,7 +752,7 @@ class RedAlertPlayer:
                     self._record_refusal(sent[index], reason, why)
             return
         if "error" in result:
-            return  # a race (stale view, batch still in flight): nothing to learn
+            return
         if result.get("accepted"):
             self._refused, self._refused_in_row = [], 0
         for row in result.get("results") or []:
@@ -867,7 +785,7 @@ class RedAlertPlayer:
         )
 
     def _repeats(self, raw: dict[str, Any]) -> list[dict[str, Any]]:
-        """The prompt's orders_refused_repeatedly rows (forgets old refusals)."""
+
         now = self._clock()
         self._refusals = {k: e for k, e in self._refusals.items() if now - e["last"] < REFUSAL_FORGET_SECONDS}
         rows = [
@@ -888,7 +806,6 @@ class RedAlertPlayer:
             kept.append(order)
         return kept
 
-    # -- setup ------------------------------------------------------------------------------
 
     def _use_config(self, config: dict | None) -> None:
         if config is self._config or not isinstance(config, dict):

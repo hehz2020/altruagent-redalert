@@ -1,9 +1,3 @@
-"""Order arbitration, acknowledgements and the deterministic decision loop.
-
-This is a tested baseline controller, not a claim of tournament strength.
-Production has a pending-intent ledger. Unknown transport outcomes are
-reconciled against fresh observations rather than retried immediately.
-"""
 from __future__ import annotations
 
 from collections import Counter, deque
@@ -40,7 +34,7 @@ def fingerprint(order: dict) -> str:
 
 
 def validate_order(order: Any, v: View) -> dict | None:
-    """Validate against the current player view before sending any command."""
+
     if not isinstance(order, dict) or order.get("cmd") not in FIELDS:
         return None
     o = dict(order)
@@ -107,7 +101,7 @@ def validate_order(order: Any, v: View) -> dict | None:
 
 
 class Controller:
-    """One fresh instance per match; no cross-match opponent memory."""
+
 
     def __init__(self):
         from .economy import Economy
@@ -144,7 +138,6 @@ class Controller:
             r["pending"] = False
             self.stats["engine_rejected" if status == "rejected" else "engine_lost"] += 1
             self._failures[key] += 1
-            # Actual loss can be retried; a persistent invalid action backs off.
             delay = 0.6 if status == "lost" else min(16.0, 2.0 ** min(self._failures[key], 4))
             self._cooldowns[key] = max(self._cooldowns.get(key, 0), self._now + delay)
         elif status in {"ok", "partial"}:
@@ -156,13 +149,12 @@ class Controller:
                 r["uncertain"] = True
 
     def on_result(self, result: dict):
-        """Immediate SDK callback. Final engine verdicts arrive in later state."""
+
         if not isinstance(result, dict):
             return
         code = result.get("error")
         if code:
             self.stats["batch_errors"] += 1
-            # These documented errors mean the batch was not applied.
             known_unsent = {"INVALID_ACTION", "STALE_STATE", "NOT_YOUR_TURN",
                             "RUNTIME_TEMPORARILY_UNAVAILABLE", "GAME_ALREADY_COMPLETE"}
             if code in known_unsent:
@@ -213,9 +205,6 @@ class Controller:
             cmd = o["cmd"]
             reflected = False
             if cmd in PRODUCTION:
-                # A batch is not fully confirmed merely because its first
-                # unit appeared. Reserve only the portion not yet represented
-                # by observed actors or queued items, avoiding double counting.
                 new_ids = {a["id"] for a in v.units + v.buildings
                            if str(a.get("type", "")).lower() == item} - r["baseline_ids"]
                 r["created_ids"].update(new_ids)
@@ -225,8 +214,6 @@ class Controller:
             elif cmd == "place":
                 reflected = v.count(item) > r["baseline_count"]
             elif cmd == "cancel":
-                # cancel removes one queued item, not the entire batch. Wait
-                # for a smaller observed queue before cancelling another.
                 reflected = v.production_count(item) < r["baseline_queued"]
             elif cmd == "deploy":
                 reflected = any(u not in {a["id"] for a in v.units} for u in o["units"])
@@ -234,10 +221,6 @@ class Controller:
                 r["pending"] = False
                 self.stats["observed_confirmations"] += 1
             elif v.now - r["sent_at"] >= r["confirm_timeout"] and v.tick > r["tick"]:
-                # Advancing observations without the full expected result
-                # eventually release the reservation. Batches get a longer
-                # build-time-based window. This is bounded recovery, not an
-                # exactly-once delivery guarantee.
                 r["pending"] = False
                 self.stats["unconfirmed_expiries"] += 1
                 self._cooldowns[r["key"]] = max(self._cooldowns.get(r["key"], 0), v.now + 1)
@@ -313,8 +296,6 @@ class Controller:
                 expanded += n
                 claimed.update(chunk.get("units", []))
                 if "building" in chunk:
-                    # Repairs and rally points may coexist, so buildings are
-                    # intentionally not claimed as movement actors here.
                     pass
                 used = True
             if used:

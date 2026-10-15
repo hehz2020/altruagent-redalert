@@ -1,19 +1,3 @@
-"""Legacy sequential local discovery + execution loop.
-
-Owns exactly what Milestone 4A's single-match runner (``altruagent.runner``)
-deliberately didn't: repeatedly discovering which match to play via
-``client.sessions()``, and feeding matches into ``run_match()`` one at a
-time, forever (or until interrupted). It does not implement concurrency —
-only one match is ever being played at any moment.
-
-No new game-loop logic lives here — every actual decision/state/step call
-still goes through the committed ``run_match()``. This module is only
-responsible for *which* match to hand it next, and what to do when that
-match finishes or fails. It remains exported as a bounded/manual primitive;
-the normal ``python -m agent`` entry point uses ``altruagent.supervisor``'s
-concurrent process-per-match runtime instead.
-"""
-
 from __future__ import annotations
 
 import time
@@ -28,19 +12,8 @@ if TYPE_CHECKING:
     from .models import GameState
 
 DEFAULT_DISCOVERY_INTERVAL_SECONDS = 15.0
-# No platform-imposed number exists for this — chosen to be comfortably
-# longer than the default discovery interval, so a deterministically
-# broken match isn't retried on essentially every tick.
 DEFAULT_COOLDOWN_SECONDS = 60.0
 
-# Errors scoped to the one match that was being played — a contestant logic
-# bug (DecisionError), a match this runner can't drive yet
-# (UnsupportedGameFlowError), or a GameAPI-level issue for that one session
-# (PlatformError). None of these mean the runtime itself is broken, so they
-# don't propagate — the match is just skipped for a cooldown period.
-# AuthenticationError (and anything else unrecognized) is deliberately NOT
-# caught here: a broken JWT/API key affects every match identically, so
-# that's a clearly global problem the process should exit on, not loop past.
 _MATCH_SCOPED_ERRORS = (DecisionError, UnsupportedGameFlowError, PlatformError)
 
 
@@ -58,30 +31,7 @@ def run_once(
     cooldown_seconds: float = DEFAULT_COOLDOWN_SECONDS,
     run_match_fn: Callable[..., "GameState"] = _default_run_match,
 ) -> bool:
-    """One discovery tick: fetch this agent's sessions, pick at most one
-    eligible active match, and play it to completion via ``run_match_fn``.
 
-    Only ``sessions.active`` is ever considered — ``waiting`` matches have
-    no GameAPI session to open yet (so ``Match.game()`` is never called for
-    them), and ``completed`` matches are just history. Both are skipped by
-    construction, not by an explicit check.
-
-    Matches are considered in the order ``client.sessions().active`` already
-    returns them — currently the backend's own ``joined_at DESC`` ordering
-    (most recently joined first, see ``db/competitions.ts``'s
-    ``getCompetitionsForAgent``) — no additional sorting is applied. The
-    first eligible match not currently in cooldown is serviced; this makes
-    the choice deterministic for a given sessions() response.
-
-    ``failed_until`` is a plain ``dict[str, float]`` the *caller* owns and
-    threads across repeated calls (``run_forever`` does this) — mapping
-    ``session_id`` to the monotonic timestamp before which that match
-    should be skipped, following a previous failure. Purely in-memory,
-    never persisted.
-
-    Returns ``True`` if a match was serviced this call (whether it
-    succeeded or failed), ``False`` if nothing was eligible right now.
-    """
     sessions = client.sessions()
     current_time = now()
 
@@ -130,19 +80,7 @@ def run_forever(
     run_match_fn: Callable[..., "GameState"] = _default_run_match,
     max_iterations: int | None = None,
 ) -> None:
-    """Repeatedly discover and play matches, one at a time, until
-    interrupted (e.g. Ctrl+C — this function does not catch
-    ``KeyboardInterrupt``; that's the caller's job, see ``agent/__main__.py``).
 
-    Each tick calls ``run_once``. If it serviced a match, the next tick
-    starts immediately (there may be another active match waiting); if
-    nothing was eligible, sleeps ``discovery_interval`` before checking
-    again. Sequential only — this never plays more than one match at a time.
-
-    ``max_iterations`` bounds the loop to that many discovery ticks instead
-    of running forever — the same parameter a production caller would just
-    never pass, used by tests to make this loop terminate deterministically.
-    """
     failed_until: dict = {}
     ticks = 0
     while max_iterations is None or ticks < max_iterations:

@@ -1,10 +1,3 @@
-"""Unit tests for altruagent.auth (ApiKeyAuth/SeatGrantAuth), the SeatGrant
-model, and how AltruAgentClient's existing one-retry-after-401 policy drives
-seat renewal — over REST ``request()`` and over the real MCP transport
-(``call_tool``, exercising the official ``mcp`` SDK against a mocked HTTP
-layer, same technique as tests/test_mcp_transport.py). No real network.
-"""
-
 from __future__ import annotations
 
 import json
@@ -42,9 +35,7 @@ def grant_body(access_token: str = "seat-jwt-1", **overrides) -> dict:
 
 
 class ClaimServer:
-    """Mock control plane: records every claim request body, and answers
-    each one with the next queued response (the last one repeats).
-    """
+
 
     def __init__(self, *responses: httpx.Response) -> None:
         self.responses = list(responses) or [httpx.Response(200, json=grant_body())]
@@ -69,7 +60,6 @@ def seat_client(server, auth: SeatGrantAuth | None = None) -> AltruAgentClient:
     )
 
 
-# -- SeatGrant ---------------------------------------------------------------
 
 
 def test_seat_grant_parses_every_backend_field():
@@ -105,7 +95,6 @@ def test_seat_grant_tolerates_missing_and_extra_fields():
     assert grant.raw["future_field"] == 1
 
 
-# -- SeatGrantAuth: claim request / claim_key ----------------------------------
 
 
 def test_claim_success_posts_token_and_key_and_returns_grant_token():
@@ -136,7 +125,7 @@ def test_claim_key_is_strong_random_and_stable_within_one_auth():
     keys = {claim["claim_key"] for claim in server.claims}
     assert len(keys) == 1
     key = keys.pop()
-    assert len(key) >= 43  # 32 random bytes, urlsafe-base64 — well above the backend's 16-char floor
+    assert len(key) >= 43
     assert key != CLAIM_TOKEN
 
 
@@ -177,7 +166,6 @@ def test_auth_repr_never_shows_claim_token_or_key():
     assert "ApiKeyAuth(api_key=<redacted>)" == repr(ApiKeyAuth("sk_agent_x"))
 
 
-# -- SeatGrantAuth: error mapping ------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -301,10 +289,9 @@ def test_renewal_returning_a_different_seat_is_rejected():
 
     with pytest.raises(SeatClaimError):
         client.login()
-    assert auth.grant.seat_id == "seat-0"  # the original grant is kept
+    assert auth.grant.seat_id == "seat-0"
 
 
-# -- AltruAgentClient configuration ----------------------------------------------
 
 
 def test_seat_auth_client_needs_no_api_key(monkeypatch):
@@ -337,7 +324,6 @@ def test_default_auth_is_api_key_auth():
     assert isinstance(client.auth, ApiKeyAuth)
 
 
-# -- renewal through the client's one-retry-after-401 policy (REST) --------------
 
 
 def test_rest_401_renews_with_same_token_and_key_then_retries_once():
@@ -362,7 +348,7 @@ def test_rest_401_renews_with_same_token_and_key_then_retries_once():
     assert result == {"ok": True}
     assert tokens_seen == ["Bearer seat-jwt-1", "Bearer seat-jwt-2"]
     assert len(claims.claims) == 2
-    assert claims.claims[0] == claims.claims[1]  # same claim_token AND same claim_key
+    assert claims.claims[0] == claims.claims[1]
     assert client._access_token == "seat-jwt-2"
     assert client.auth.grant.access_token == "seat-jwt-2"
 
@@ -378,7 +364,7 @@ def test_rest_second_401_after_renewal_stops_without_looping():
     with pytest.raises(AuthenticationError):
         seat_client(handler).request("GET", "https://gameapi.example.test/games/x")
 
-    assert len(claims.claims) == 2  # initial claim + exactly one renewal
+    assert len(claims.claims) == 2
 
 
 def test_rest_failed_renewal_raises_authentication_error():
@@ -399,10 +385,9 @@ def test_rest_failed_renewal_raises_authentication_error():
 
     assert isinstance(exc_info.value, AuthenticationError)
     assert len(claims.claims) == 2
-    assert len(game_calls) == 1  # never retried after the renewal itself failed
+    assert len(game_calls) == 1
 
 
-# -- renewal through the real MCP transport ---------------------------------------
 
 
 def _initialize_response(req_id) -> dict:

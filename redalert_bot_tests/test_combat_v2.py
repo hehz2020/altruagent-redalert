@@ -1,4 +1,3 @@
-"""Tactical contracts: meaningful scenarios, not claimed win-rate evidence."""
 import unittest
 
 from altru_redalert.combat import Military
@@ -171,7 +170,6 @@ class RoleControlTests(unittest.TestCase):
         military._prepare_sweep(View(raw))
         before = list(military.sweep)
         military.memories[99] = ((50, 50), 290)
-        # Only a small ground island is reachable once the actual map arrives.
         rows = ['.' * 20 + '~' * 76 for _ in range(20)] + ['~' * 96 for _ in range(76)]
         config = {'rules': {'maps': {'scenario-map': {'layout': {
                   'origin': [4, 4], 'rows': rows}}}}}
@@ -195,8 +193,6 @@ class RoleControlTests(unittest.TestCase):
         towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
         v = View(snapshot(300, units=own, enemy_buildings=towers))
         orders = Military().propose(v)
-        # Unified standoff must cancel focused pursuit, so all six tanks use
-        # a plain Move rather than an attack-move that can reacquire the wall.
         advances = [i.order for i in orders if i.order['cmd'] == 'move']
         self.assertTrue(advances)
         self.assertTrue(all(i['to'][0] <= 40 for i in advances))
@@ -276,7 +272,6 @@ class RoleControlTests(unittest.TestCase):
         military = Military()
         first = military.propose(View(snapshot(300, units=own, enemies=enemies)))
         military.mark_sent([i.order for i in first], 300)
-        # Fresh tick, but the server has not yet applied the pending attack.
         later = military.propose(View(snapshot(300.25, units=own, enemies=enemies)))
         self.assertFalse(any(i.order['cmd'] in {'move', 'attack_move', 'attack'} for i in later))
 

@@ -1,5 +1,3 @@
-"""Persistent bridge tested through the real MCP SDK and mocked HTTP only."""
-
 from __future__ import annotations
 
 import asyncio
@@ -75,7 +73,6 @@ def persistent(monkeypatch):
     monkeypatch.setenv("ALTRUAGENT_PERSISTENT_MCP", "1")
     client = FakeClient(["jwt-1", "jwt-2", "jwt-3"])
     server = Server()
-    # Preserve factory identity so the second request uses the same session.
     factory = server.factory
     yield client, server, factory
     close_persistent_sessions(client)

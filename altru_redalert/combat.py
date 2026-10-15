@@ -1,9 +1,3 @@
-"""Conservative ground-army control using only contestant-visible information.
-
-Spearhead-inspired local commitment, economy protection, selective targeting
-and stable withdrawals. No hidden actors or engine-internal state are used.
-"""
-
 from collections import deque
 from math import hypot, sqrt
 from statistics import median
@@ -25,8 +19,6 @@ NONCOMBAT = {
 }
 GROUND_DEFENSE = {"pbox", "hbox", "gun", "ftur", "tsla"}
 AIR = {"mig", "yak", "heli", "hind", "mh60", "u2", "badr", "badr.bomber"}
-# These public engine actors inherit AttackTurreted / AttackFollow: their
-# opportunity-fire tick continues while a plain Move controls their chassis.
 MOBILE_FIRE = {"1tnk", "2tnk", "3tnk", "4tnk", "jeep", "ftrk", "stnk"}
 OPENING_ARMOR_TARGET = 3
 OPENING_ARMOR_DEADLINE = 360
@@ -56,12 +48,7 @@ def _center(actors):
 
 
 class Military:
-    """One cheap scout, a concentrated main force, and interruptible defense.
 
-    Orders retain their goals between observations. New units join existing
-    goals; unchanged busy units are left alone. Static map sweeps are restricted
-    to an approximate connected ground region where a layout is available.
-    """
 
     def __init__(self):
         self.mode = "regroup"
@@ -106,7 +93,6 @@ class Military:
 
     def _value(self, view, actor, structure=False):
         kind = _kind(actor)
-        # Missing costs affect only this tactical estimate, never spending.
         fallback = 150 if kind.startswith("e") or kind == "dog" else 700
         value = (view.cost(kind) or fallback) * sqrt(max(0.15, _hp(actor) / 100))
         if structure:
@@ -124,12 +110,7 @@ class Military:
             self.mode, self.mode_since = mode, now
 
     def mark_sent(self, orders, now):
-        """Record only orders selected for submission by the shared controller.
 
-        ``propose`` is speculative: its intents may lose priority arbitration.
-        Root's submission ledger handles rejected/lost orders; idle units also
-        naturally retry after three seconds, and busy orders after eight.
-        """
         for order in orders:
             if order.get("cmd") == "attack" and "target" in order:
                 signature = ("attack", order["target"])
@@ -153,13 +134,9 @@ class Military:
                 continue
             old = self.desired.get(uid)
             at_goal = pos(actor) is not None and distance(pos(actor), target) < arrival
-            # Busy units execute a stable order. Refresh only after a generous
-            # timeout or a changed tactical goal; idle units retry after 3 s.
             due = (old is None or old[0] != signature
                    or view.now - old[1] >= 18
                    or (actor.get("idle") and view.now - old[1] >= 3))
-            # A unit already at a disengagement point can still be executing
-            # an old direct attack. A same-cell Move cancels that pursuit.
             replacing = interrupt and (old is None or old[0] != signature)
             if due and (not at_goal or cmd != "move" or replacing):
                 selected.append(uid)
@@ -172,7 +149,6 @@ class Military:
         nearest = min(enemies, key=lambda a: distance(pos(a), origin), default=None)
         threat = pos(nearest) if nearest else None
         if view.base is not None and distance(origin, view.base) > 8:
-            # Returning home must not send a unit straight through its pursuer.
             if threat is None or distance(threat, view.base) > distance(threat, origin):
                 return view.base
         if threat is not None:
@@ -224,8 +200,6 @@ class Military:
             self.sweep.sort(key=lambda p: distance(p, view.enemy_base))
 
     def _remember(self, view, army):
-        # Store only the last authorized sighting. Mobile contacts expire quickly;
-        # their positions are risk hints, never valid attack-target actor IDs.
         current = {_id(e) for e in view.enemies + view.enemy_buildings}
         for e in view.enemies + view.enemy_buildings:
             if living(e) and pos(e) is not None:
@@ -250,15 +224,11 @@ class Military:
     def _goal(self, view, center):
         visible = [b for b in view.enemy_buildings if living(b) and pos(b) is not None]
         if visible:
-            # Valuable production/economy is a destination, but attack-move
-            # lets the engine engage local defenders before reaching it.
             return pos(min(visible, key=lambda b: distance(center, pos(b))
                            + (12 if _kind(b) in GROUND_DEFENSE else 0)))
         mcvs = [u for u in view.enemies if living(u) and _kind(u) == "mcv"
                 and pos(u) is not None]
         if mcvs:
-            # Victory also requires the surviving enemy MCV. Pursue its
-            # current visible position before searching old base locations.
             return pos(min(mcvs, key=lambda u: distance(center, pos(u))))
         memories = [p for p, _ in self.memories.values()]
         if memories:
@@ -319,17 +289,12 @@ class Military:
             if (old is None or old[0] != signature or view.now - old[1] >= 12
                     or (actor.get("idle") and view.now - old[1] >= 2)):
                 groups.setdefault(tid, []).append(uid)
-        # Leave room for production and urgent economy orders in the 20-order cap.
         return [Intent({"cmd": "attack", "units": ids, "target": tid},
                        priority=priority, cooldown=1.5, key=f"military:{role}:{tid}")
                 for tid, ids in sorted(groups.items(), key=lambda pair: -len(pair[1]))[:6]]
 
     def _local_fire(self, view, army, enemies, role="fire", priority=80):
-        """Focus only within actual estimated range: do not chase into a base.
 
-        Allocation discourages spending the entire army's volley on a nearly
-        dead rifleman. Busy units with an unchanged target keep that order.
-        """
         assignments, committed, allocated = [], set(), {}
         for actor in sorted(army, key=lambda a: (-weapon_range(view, a), _id(a))):
             candidates = []
@@ -340,7 +305,7 @@ class Military:
                 overkill = allocated.get(_id(e), 0) / max(1., health(view, e))
                 score /= 1. + max(0., overkill - .8) * 5
                 if self.desired.get(_id(actor), (None,))[0] == ("attack", _id(e)):
-                    score *= 1.2  # Hysteresis: avoid target churn and cancelled shots.
+                    score *= 1.2
                 candidates.append((score, -_id(e), e))
             if not candidates:
                 continue
@@ -350,8 +315,6 @@ class Military:
             allocated[_id(target)] = allocated.get(_id(target), 0) + damage_rate(view, actor, target) * 2.
         intents = self._attack_orders(view, assignments, role, priority)
         emitted = {uid for intent in intents for uid in intent.order["units"]}
-        # A capped target group must not reserve units whose attack was omitted.
-        # Preserve an already running valid attack, otherwise let macro control act.
         committed = { _id(a) for a, target in assignments if _id(a) in emitted
                       or (self.desired.get(_id(a), (None,))[0] == ("attack", _id(target))
                           and (not a.get("idle", False)
@@ -359,7 +322,7 @@ class Military:
         return intents, committed
 
     def _withdraw(self, view, army, enemies, role="retreat"):
-        """Fast units disengage; trapped slow units fight instead of free losses."""
+
         center = _center(army)
         if self.withdraw_goal is None or view.now >= self.retreat_until:
             self.withdraw_goal = self._fallback(view, center, enemies)
@@ -372,7 +335,6 @@ class Military:
             close = [e for e in attackers if distance(pos(e), pos(a)) <= weapon_range(view, e, a) + .5]
             refuge = any(distance(pos(a), pos(b)) < 7 for b in shelters)
             faster = not close or speed(view, a) > max(speed(view, e) for e in close) * 1.08
-            # Artillery cannot trade at point-blank range; withdraw behind screens.
             if faster or refuge or _kind(a) in ARTILLERY or not any(
                     damage_rate(view, a, e, at_distance=distance(pos(a), pos(e))) > 0 for e in close):
                 movers.append(a)
@@ -393,13 +355,8 @@ class Military:
                    and any(distance(pos(e), pos(p)) < 11 for p in protected)]
         if not threats:
             return [], set()
-        # Deal with the most exposed economy group, not a bait unit beside an
-        # irrelevant remote power plant. Only enough closest defenders respond.
         target = min(threats, key=lambda e: min(distance(pos(e), pos(p)) for p in protected))
         local = [e for e in threats if distance(pos(e), pos(target)) < 13]
-        # Aircraft must not recall ground-only units that cannot help. Check
-        # weapon suitability independently of distance, so distant AA can still
-        # respond while the ground army retains its own objective.
         candidates = sorted((a for a in army if any(
             damage_rate(view, a, e) > 0 for e in local)),
             key=lambda a: distance(pos(a), pos(target)))
@@ -414,7 +371,6 @@ class Military:
         center = _center(defenders)
         ratio = force_ratio(view, defenders, local)
         if ratio < .65 and any(distance(pos(a), pos(e)) < 9 for a in defenders for e in local):
-            # Survive to reinforce while avoiding a full-army suicide response.
             self.withdraw_goal = self._fallback(view, center, local)
             return self._withdraw(view, defenders, local, "defense-withdraw"), ids
         orders, engaged = self._local_fire(view, [a for a in defenders if _kind(a) not in ARTILLERY],
@@ -426,8 +382,6 @@ class Military:
         return orders, ids
 
     def _raid(self, view, army, enemies):
-        # Opportunistic harassment requires real reconnaissance and a large main
-        # force; never split a small starting army or invent an unseen harvester.
         if len(army) < 14 or any(distance(pos(e), _center(army)) < 12 and weapons(view, e) for e in enemies):
             self.raid_ids.clear()
             return [], set()
@@ -454,20 +408,11 @@ class Military:
         return [], set()
 
     def _siege_position(self, view, gun, enemies):
-        """A visible structure's safe firing position, independent of the screen.
 
-        Keeping every gun four cells behind tanks at a ten-cell standoff can
-        strand a twelve-cell gun forever. Approach a currently visible building
-        from the gun's side, and verify the resulting map cell is both in our
-        firing range and outside visible enemy firing ranges. This is a local
-        position check, not a prediction of an unseen enemy or a safe route.
-        """
         visible_buildings = {_id(b) for b in view.enemy_buildings}
         targets = [e for e in enemies if _id(e) in visible_buildings
                    and damage_rate(view, gun, e) > 0]
         for target in sorted(targets, key=lambda e: distance(pos(gun), pos(e))):
-            # Far-away sightings do not peel a gun off its screen. Normal
-            # formation movement brings it close enough for a local approach.
             if distance(pos(gun), pos(target)) > weapon_range(view, gun, target) + 12:
                 continue
             dx, dy = pos(gun)[0] - pos(target)[0], pos(gun)[1] - pos(target)[1]
@@ -480,9 +425,6 @@ class Military:
             if point is None or damage_rate(view, gun, target,
                     at_distance=distance(point, pos(target))) <= 0:
                 continue
-            # Use a conservative outer-range margin, not distance minus one:
-            # subtracting a margin can accidentally move an enemy artillery
-            # estimate inside its minimum range and label real counterfire safe.
             if any(damage_rate(view, e, gun) > 0
                    and distance(pos(e), point) <= weapon_range(view, e, gun) + 1.
                    for e in enemies):
@@ -500,7 +442,6 @@ class Military:
         withdrawing = set()
         for a in artillery:
             nearby = [e for e in enemies if weapons(view, e) and distance(pos(e), pos(a)) < 7]
-            # A screen must actually stand between the gun and its attacker.
             screened = all(any(distance(pos(f), pos(e)) + 1 < distance(pos(a), pos(e))
                                and distance(pos(f), pos(a)) < 8 for f in front) for e in nearby)
             if nearby and (not screened or any(distance(pos(a), pos(e)) < 4 for e in nearby)):
@@ -526,12 +467,7 @@ class Military:
         return orders, {_id(a) for a in artillery}
 
     def _body_center(self, army, goal):
-        """Use a real nearby group, not the midpoint of front and reinforcements.
 
-        A sufficient infantry body sets a mixed army's marching pace. Otherwise
-        tanks use their own largest local group. Newly produced stragglers do
-        not pull an established fighting group back across the entire map.
-        """
         infantry = [a for a in army if _kind(a) in {"e1", "e2", "e3", "e4", "shok", "e7"}]
         pool = infantry if len(infantry) >= 4 else [a for a in army if _kind(a) not in ARTILLERY]
         if not pool:
@@ -547,7 +483,7 @@ class Military:
         return self.ground_routes
 
     def _body_origin(self, army, goal):
-        """Anchor terrain queries at an actual actor, not a median over water."""
+
         center = self._body_center(army, goal)
         body = [a for a in army if _kind(a) not in ARTILLERY] or army
         return pos(min(body, key=lambda a: (distance(pos(a), center), _id(a))))
@@ -556,11 +492,7 @@ class Military:
         origin = self._body_origin(army, goal)
         routes = self._navigation(view)
         if routes.available:
-            # A failed route must never turn back into a geometric waypoint
-            # on the opposite bank. Waiting at the known origin is bounded.
             return routes.waypoint(origin, goal, distance_cells=step) or list(origin)
-        # Before public layout arrives retain usable bounded movement. Once
-        # layout is available every new bound uses its connected ground graph.
         dx, dy = goal[0] - origin[0], goal[1] - origin[1]
         norm = max(1., hypot(dx, dy))
         scale = min(step, norm) / norm
@@ -568,12 +500,7 @@ class Military:
                                   round(origin[1] + scale * dy)))
 
     def _cohesive_advance(self, view, army, movable, goal):
-        """Advance now, in short bounds, instead of racing to the far base.
 
-        No extra production or army-value gate is introduced. A fast truck
-        reaches the same nearby bound as its infantry, then waits while the
-        slower body catches up. Attack-move is retained for ordinary fighting.
-        """
         self._navigation(view)
         center = self._body_center(army, goal)
         if (self.march_goal is None or self.march_destination is None
@@ -586,14 +513,7 @@ class Military:
         return self._orders(view, movable, "attack_move", self.march_goal, "pressure", 40)
 
     def _screen_skirmish(self, view, army, enemies, goal):
-        """Recover exposed turreted vehicles and kite only with a range edge.
 
-        This is positioning, not a prediction of hidden reload state. A Move
-        can retain engine opportunity fire for these known turreted actors;
-        infantry is deliberately excluded because its frontal attack behaves
-        differently. Successful visible raids are not interrupted by an empty
-        field or harmless economic target.
-        """
         if not army:
             return [], set()
         center = self._body_center(army, goal)
@@ -615,8 +535,6 @@ class Military:
             if len(army) >= 5 and lead > 7 and len(screen) < 3:
                 returners.append(a)
                 continue
-            # Only outranging, faster vehicles can deliberately kite. A jeep
-            # cannot outrange riflemen; a flak truck can (6 versus 5 cells).
             close = [e for e in attackers
                      if distance(pos(a), pos(e)) <= weapon_range(view, e, a) + .5
                      and weapon_range(view, a, e) >= weapon_range(view, e, a) + .8
@@ -634,8 +552,6 @@ class Military:
             routes = self._navigation(view)
             if routes.available and not routes.reachable(pos(a), point):
                 continue
-            # Never kite toward a second currently visible threat. The public
-            # terrain projection can bend the requested point around water.
             if any(distance(point, pos(e)) + .25 < distance(pos(a), pos(e)) for e in attackers):
                 continue
             if distance(point, center) > max(10., distance(pos(a), center) + 1):
@@ -648,14 +564,13 @@ class Military:
         orders = self._orders(view, returners, "move", rally,
                               "screen-return", 91)
         reserved = {_id(a) for a in returners}
-        # Bound the command budget; other vehicles keep their valid fire orders.
         for a, point in sorted(kites, key=lambda pair: (_hp(pair[0]), _id(pair[0])))[:4]:
             orders += self._orders(view, [a], "move", point, f"kite-{_id(a)}", 90, arrival=.75)
             reserved.add(_id(a))
         return orders, reserved
 
     def _assault_standoff(self, view, army, goal, enemies):
-        """Decide the old projected-risk gate before assigning direct attacks."""
+
         resistance = [e for e in enemies if weapons(view, e) and distance(pos(e), goal) < 12]
         visible_ids = {_id(e) for e in enemies}
         resistance += [e for uid, (e, seen, building) in self.contacts.items()
@@ -700,7 +615,6 @@ class Military:
         center = _center(main)
         nearby = [e for e in enemies if weapons(view, e) and distance(pos(e), center) < 17]
         local = [a for a in main if distance(pos(a), center) < 15]
-        # Friendly static guns count only while they can support this contact.
         support = [b for b in view.buildings if _kind(b) in GROUND_DEFENSE | {"agun", "sam"}
                    and b.get("powered", True) and distance(pos(b), center) < 10]
         ratio = force_ratio(view, local + support, nearby)
@@ -709,11 +623,6 @@ class Military:
             if self.mode != "retreat" or view.now >= self.retreat_until:
                 self.withdraw_goal = self._fallback(view, center, nearby)
             self.retreat_until = max(self.retreat_until, view.now + 9)
-        # Finish the committed withdrawal even when pursuers leave current
-        # vision or a single favorable estimate appears. Otherwise fog can
-        # turn the ratio into 10 and replace this move with an advance on the
-        # very next observation. Home defense was already assigned above;
-        # trapped units still return fire through _withdraw.
         if view.now < self.retreat_until:
             self._set_mode("retreat", view.now)
             return orders + self._withdraw(view, main, nearby)
@@ -736,15 +645,10 @@ class Military:
         enough_force = ((total >= threshold and len(main) >= 6)
                         or (total >= 1700 and len(main) >= 3)
                         or (view.now > 360 and len(main) >= 3))
-        # Preserve candidate A's opening: combine economic tank timing with
-        # cohesion, without sending its first tank out alone.
         if view.now < OPENING_ARMOR_DEADLINE and view.has("weap") and view.count("harv") >= 2:
             armor = sum(_kind(a) in {"1tnk", "2tnk", "3tnk", "4tnk"} for a in main)
             enough_force = enough_force and armor >= OPENING_ARMOR_TARGET
         ready = enough_force or view.now < self.commit_until
-        # This must precede all main-squad targeting. Appending a move after
-        # focus fire left engaged tanks chasing a tower while only infantry
-        # obeyed the standoff. Defense/raid orders above belong to other units.
         standoff = self._assault_standoff(view, main, goal, enemies) if ready else None
         if standoff is not None:
             self._set_mode("standoff", view.now)
@@ -775,8 +679,6 @@ class Military:
             self._set_mode("regroup", view.now)
             return orders + self._orders(view, movable, "attack_move", center, "assemble", 45)
         self._set_mode("pressure", view.now)
-        # A depleted force may finish the existing commitment, but cannot
-        # renew it by remaining in pressure or briefly leaving/re-entering it.
         if enough_force:
             self.commit_until = view.now + 20
         if self.army_goal is None or distance(self.army_goal, goal) > 6 or view.now - self.goal_since > 20:

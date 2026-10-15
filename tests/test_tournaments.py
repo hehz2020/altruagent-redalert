@@ -1,8 +1,3 @@
-"""Unit tests for AltruAgentClient.tournaments()/tournament()/join_tournament()/
-leave_tournament(). All HTTP is mocked via httpx.MockTransport — none of
-these require a running platform.
-"""
-
 from __future__ import annotations
 
 import httpx
@@ -43,7 +38,6 @@ def tournament_row(tournament_id: str, status: str, **overrides) -> dict:
     return payload
 
 
-# -- client.tournaments() --------------------------------------------------
 
 
 def test_tournaments_makes_one_request_and_parses_list():
@@ -106,7 +100,6 @@ def test_tournaments_does_no_detail_enrichment():
     assert detail_calls == []
 
 
-# -- client.tournament(id) --------------------------------------------------
 
 
 def test_tournament_detail_sends_authenticated_request_and_parses_viewer():
@@ -178,7 +171,6 @@ def test_get_nonexistent_tournament_404_preserved():
     assert exc_info.value.status_code == 404
 
 
-# -- client.join_tournament() / leave_tournament() --------------------------
 
 
 def test_join_tournament_exact_path_and_no_body():
@@ -206,7 +198,7 @@ def test_join_tournament_exact_path_and_no_body():
     client = make_client(handler)
     result = client.join_tournament("t-1")
 
-    assert request_bodies == [b""]  # no body sent
+    assert request_bodies == [b""]
     assert result["success"] is True
     assert result["next_actions"][0]["action"] == "poll_tournament"
 
@@ -298,9 +290,6 @@ def test_leave_tournament_failed_platform_error():
 
 
 def test_join_nonexistent_tournament_returns_400_join_failed_not_404():
-    # Verified against Agent_ACP: unlike GET /tournaments/{id} (404 for a
-    # missing tournament), POST .../join collapses every failure — including
-    # "not found" — into the same 400 join_failed.
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/auth/agent/login":
             return login_ok(request)

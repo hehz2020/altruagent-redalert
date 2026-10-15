@@ -1,4 +1,3 @@
-# Build this spec on Windows x64, never rename a Linux binary as .exe.
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata, is_module_or_submodule
 
@@ -6,8 +5,6 @@ root = Path(SPECPATH).parent
 hidden = []
 for package in ("altruagent", "altru_redalert", "agent", "examples", "windows"):
     hidden += collect_submodules(package)
-# The optional MCP command-line package exits at import without mcp[cli].
-# Filter it before recursive discovery; the bot only uses the SDK.
 hidden += collect_submodules(
     "mcp", filter=lambda name: not is_module_or_submodule(name, "mcp.cli")
 )

@@ -1,10 +1,3 @@
-"""Tests for the official tournament runtime: the supervisor loop
-(``altruagent.supervisor.run_tournament_once``/``run_tournament_forever``)
-with fake processes, and the per-seat worker
-(``altruagent.worker.run_tournament_worker``) with a fake official client and
-a recording ``run_game``. No real processes, network, or GameAPI.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -84,7 +77,7 @@ def tournament_game(seat_id="seat-1", **overrides):
 
 
 class FakeOfficial:
-    """Returns scripted assignment listings (a list, or an exception)."""
+
 
     def __init__(self, *listings):
         self.listings = list(listings)
@@ -120,7 +113,6 @@ class Harness:
         return [p.args[0].seat_id for p in self.factory.processes]
 
 
-# -- supervisor --------------------------------------------------------------------------
 
 
 def test_no_assignments_starts_nothing_and_keeps_waiting():
@@ -257,7 +249,7 @@ def test_one_execution_id_per_runtime_shared_by_all_its_workers():
     ids = {p.args[0].execution_id for p in h.factory.processes}
     assert ids == {h.state.execution_id}
     assert 16 <= len(h.state.execution_id) <= 256
-    assert h.state.execution_id not in repr(h.factory.processes[0].args[0])  # kept out of logs
+    assert h.state.execution_id not in repr(h.factory.processes[0].args[0])
 
 
 def test_each_runtime_gets_a_different_execution_id():
@@ -291,7 +283,7 @@ def test_finished_match_is_reaped_logged_and_not_restarted_while_it_lingers():
     h.tick()
     h.factory.processes[0].finish(EXIT_SUCCESS)
 
-    h.tick()  # reaped; the seat is still listed for a moment
+    h.tick()
     h.tick()
 
     assert h.log[-2:] == ["Match finished.", WAITING_MESSAGE]
@@ -313,25 +305,24 @@ def test_failed_worker_is_retried_after_cooldown_reconnect_path():
     h.tick()
     h.factory.processes[0].finish(EXIT_UNEXPECTED)
 
-    h.tick(advance=1.0)   # reaped -> cooldown
-    h.tick(advance=10.0)  # still cooling down
+    h.tick(advance=1.0)
+    h.tick(advance=10.0)
     assert h.started() == ["seat-1"]
     assert "Retrying in 30s" in h.log[2]
 
-    h.tick(advance=30.0)  # cooldown over, still assigned -> new worker (re-grant)
+    h.tick(advance=30.0)
     assert h.started() == ["seat-1", "seat-1"]
 
 
 def test_a_seat_that_keeps_failing_is_retried_less_and_less_often():
-    # A game the server lost answers SESSION_NOT_FOUND until the platform closes it.
     h = Harness([a("seat-1")], cooldown=60.0)
     waits = []
     for _ in range(6):
         h.tick()
         h.factory.processes[-1].finish(EXIT_MATCH_FAILURE)
-        h.tick(advance=0.0)  # reaped
+        h.tick(advance=0.0)
         waits.append(h.state.failed_until["seat-1"] - h.clock["t"])
-        h.clock["t"] = h.state.failed_until["seat-1"]  # wait it out; the next tick starts a new worker
+        h.clock["t"] = h.state.failed_until["seat-1"]
 
     assert waits == [60.0, 120.0, 240.0, 480.0, SEAT_FAILURE_BACKOFF_MAX_SECONDS, SEAT_FAILURE_BACKOFF_MAX_SECONDS]
     assert "Retrying in 120s" in "\n".join(h.log)
@@ -344,7 +335,7 @@ def test_a_finished_match_resets_the_seat_backoff_and_a_seat_that_left_is_forgot
     h.tick(advance=0.0)
     assert h.state.seat_failures == {"seat-1": 1}
     h.clock["t"] = h.state.failed_until["seat-1"]
-    h.tick()  # retried
+    h.tick()
     h.factory.processes[-1].finish(EXIT_SUCCESS)
     h.tick(advance=0.0)
     assert h.state.seat_failures == {}
@@ -353,7 +344,7 @@ def test_a_finished_match_resets_the_seat_backoff_and_a_seat_that_left_is_forgot
     h2 = Harness([a("seat-1")], [], cooldown=10.0)
     h2.tick()
     h2.factory.processes[-1].finish(EXIT_MATCH_FAILURE)
-    h2.tick(advance=0.0)  # reaped; the seat is no longer listed
+    h2.tick(advance=0.0)
     assert h2.state.seat_failures == {}
 
 
@@ -400,14 +391,13 @@ def test_authentication_failure_propagates():
         h.tick()
 
 
-# -- what the runtime says about a game's process --------------------------------------------
 
 STOPPED_WITH_ERROR = ("Your agent's process for this match stopped with an error (exit code 1); "
                       "the match continues. Retrying in 60s if it is still assigned.")
 
 
 def players(count, *, mine=None, game_type="werewolf", context="testing", match_id="m-1"):
-    """``mine`` (default: all ``count``) assignments for one match of ``count`` players."""
+
     return [OfficialAssignment(match_id=match_id, seat_id=f"{match_id}-p{i}", game_type=game_type,
                                seat_position=i, seat_count=count, match_status="in_progress",
                                seat_status="pending", context=context)
@@ -415,8 +405,6 @@ def players(count, *, mine=None, game_type="werewolf", context="testing", match_
 
 
 def test_an_agent_error_says_the_process_stopped_and_the_match_continues():
-    # Was: "Match ended with an error (exit code 1); ..." then "Waiting for
-    # your next game..." while the match was still being played.
     h = Harness([a("seat-1")])
     h.tick()
     h.factory.processes[0].finish(EXIT_MATCH_FAILURE)
@@ -428,15 +416,14 @@ def test_an_agent_error_says_the_process_stopped_and_the_match_continues():
 
 
 def test_a_match_that_ends_while_its_process_is_stopped_is_said_once():
-    # Was: nothing at all when the match ended (e.g. the placeholder in Red Alert).
     h = Harness(players(2, game_type="red_alert"), players(2, game_type="red_alert"), [])
     h.tick()
     for process in h.factory.processes:
         process.finish(EXIT_MATCH_FAILURE)
-    h.tick()  # both stopped; the match goes on (still listed)
+    h.tick()
     assert h.log[-1] == STOPPED_WITH_ERROR and h.log.count(STOPPED_WITH_ERROR) == 1
 
-    h.tick()  # the match is over: no longer listed
+    h.tick()
 
     assert h.log[-2:] == ["Your red_alert match (Testing) has ended while your agent's process for it was stopped.",
                           WAITING_MESSAGE]
@@ -462,7 +449,7 @@ def test_waiting_is_said_once_when_one_match_finishes_and_another_ended_without_
     h.tick()
     h.factory.processes[0].finish(EXIT_SUCCESS)
 
-    h.tick()  # seat-1's match finished; seat-2's match ended while its process was stopped
+    h.tick()
 
     assert h.log[-3:] == ["Match finished.", WAITING_MESSAGE,
                           "Your pokemon_vgc_doubles_draft match has ended while your agent's process for it was stopped."]
@@ -473,7 +460,7 @@ def test_a_stopped_process_that_was_started_again_and_finished_says_nothing_more
     h.tick()
     h.factory.processes[0].finish(EXIT_MATCH_FAILURE)
     h.tick()
-    h.tick(advance=10.0)  # started again
+    h.tick(advance=10.0)
     h.factory.processes[1].finish(EXIT_SUCCESS)
 
     h.tick()
@@ -517,12 +504,11 @@ def test_a_pickup_of_some_of_the_players_says_how_many():
 
 
 def test_a_self_play_finish_is_one_line_not_one_per_player():
-    # Was: 7 x ("Match finished.", "Waiting for your next game...").
     h = Harness(players(7), players(7), [])
     h.tick()
     for process in h.factory.processes[:3]:
         process.finish(EXIT_SUCCESS)
-    h.tick()  # 3 of 7 done: the match isn't over for this runtime yet
+    h.tick()
     assert "Match finished." not in h.log
     for process in h.factory.processes[3:]:
         process.finish(EXIT_SUCCESS)
@@ -556,7 +542,6 @@ def test_a_self_play_match_no_longer_assigned_says_so_once():
     assert h.log[-1] == WAITING_MESSAGE and h.log.count(WAITING_MESSAGE) == 1
 
 
-# -- signing in again during a run (the agent session lasts about an hour) ------------------
 
 MINT_FAILURE = OfficialAgentError(
     "temporary", status_code=401, error_code="invalid_official_agent_key",
@@ -581,9 +566,9 @@ def test_a_temporary_sign_in_failure_keeps_running_games_and_the_runtime(error):
     h.tick()
     worker = h.factory.processes[0]
 
-    h.tick()                 # fails: no exception, the worker keeps playing
-    h.tick(advance=120.0)    # fails again after the pause
-    h.tick(advance=120.0)    # recovered
+    h.tick()
+    h.tick(advance=120.0)
+    h.tick(advance=120.0)
 
     assert not worker.terminated and worker.is_alive()
     assert h.state.registry.pids().keys() == {"seat-1"}
@@ -608,12 +593,12 @@ def test_a_sign_in_failure_never_counts_toward_stopping_a_worker():
 def test_after_too_many_attempts_it_waits_a_full_minute_before_trying_again():
     h = Harness(OfficialAgentError("slow down", status_code=429, error_code="rate_limited"), [])
 
-    h.tick(advance=1.0)       # t=1: 429
+    h.tick(advance=1.0)
     for _ in range(5):
-        h.tick(advance=10.0)  # t=11..51: still waiting
+        h.tick(advance=10.0)
     assert h.official.calls == 1
 
-    h.tick(advance=10.0)      # t=61: a minute later
+    h.tick(advance=10.0)
     assert h.official.calls == 2
 
 
@@ -635,17 +620,17 @@ def test_the_backoff_starts_over_after_a_successful_listing():
     error = OfficialAgentError("boom", status_code=500)
     h = Harness(error, error, [], error, [])
 
-    h.tick(advance=1.0)    # fail (wait 10)
-    h.tick(advance=10.0)   # fail (wait 20)
-    h.tick(advance=20.0)   # ok
-    h.tick(advance=1.0)    # fail again: back to a 10 s wait
+    h.tick(advance=1.0)
+    h.tick(advance=10.0)
+    h.tick(advance=20.0)
+    h.tick(advance=1.0)
     assert h.state.discovery_retry_at == h.clock["t"] + 10.0
 
 
 def test_finished_workers_are_still_reaped_while_sign_in_is_failing():
     h = Harness([a("seat-1")], OfficialAgentError("slow down", status_code=429, error_code="rate_limited"))
     h.tick()
-    h.tick()  # 429: waiting a minute
+    h.tick()
     h.factory.processes[0].finish(EXIT_SUCCESS)
 
     h.tick(advance=5.0)
@@ -689,13 +674,10 @@ def test_forever_survives_temporary_sign_in_failures_without_stopping_workers():
     assert not any("Stopping" in line for line in log[:-1])
 
 
-# -- the same, through the real client and a mock control plane ------------------------------
 
 
 class RefreshBackend(OfficialBackend):
-    """The control plane from test_official, where the next sign-in answers
-    ``refresh`` (one response, used while set) instead of a session.
-    """
+
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -737,16 +719,16 @@ def test_real_client_session_refresh_failure_keeps_games_running(answer):
     h = _real_harness(backend)
     h.tick()
     worker = h.factory.processes[0]
-    backend.valid.clear()   # the hour-long session expires
+    backend.valid.clear()
     backend.refresh = answer
 
-    h.tick()                # GET 401 -> sign in again -> temporary failure
+    h.tick()
 
     assert not worker.terminated and h.state.registry.pids().keys() == {"seat-1"}
     assert any("Could not renew your agent session" in line for line in h.log)
     assert not any("Rotate key" in line for line in h.log)
 
-    backend.refresh = None  # the platform recovers
+    backend.refresh = None
     h.tick(advance=120.0)
     assert h.log[-1] == "Assignment discovery recovered."
     assert not worker.terminated and h.started() == ["seat-1"]
@@ -758,7 +740,7 @@ def test_real_client_fresh_session_still_rejected_keeps_games_running():
     h.tick()
     worker = h.factory.processes[0]
     backend.valid.clear()
-    backend.reject_new_sessions = True  # e.g. the sign-in service is briefly down
+    backend.reject_new_sessions = True
 
     h.tick()
 
@@ -782,7 +764,6 @@ def test_real_client_revoked_key_still_stops_the_runtime():
     assert exc_info.value.error_code == "invalid_official_agent_key"
 
 
-# -- which kinds of game a runtime plays (--tournament / --match) ----------------------------
 
 MATCH_ONLY = frozenset({TESTING})
 TOURNAMENT_ONLY = frozenset({TOURNAMENT})
@@ -893,8 +874,6 @@ def test_tournament_waiting_warning_names_what_the_server_sent(fields, detail):
 
 
 def test_a_running_game_is_not_stopped_when_its_context_changes_to_a_kind_not_played():
-    # Started as a tournament game (no context: an older backend), then the
-    # backend starts labelling the same seat "testing".
     h = Harness([a("seat-1")], [match_game("seat-1", match_id="match-seat-1")], kinds=TOURNAMENT_ONLY)
 
     for _ in range(MISSING_POLLS_BEFORE_STOP + 3):
@@ -922,9 +901,9 @@ def test_a_skipped_game_is_never_started_after_a_played_one_finishes():
     h.factory.processes[0].finish(EXIT_SUCCESS)
 
     for _ in range(3):
-        h.tick(advance=100.0)  # past every cooldown
+        h.tick(advance=100.0)
 
-    assert h.started() == ["seat-1", "seat-1"]  # the test match again (still listed), never the tournament game
+    assert h.started() == ["seat-1", "seat-1"]
     assert h.log.count(FALL_CUP_WARNING) == 1
 
 
@@ -977,7 +956,6 @@ def test_forever_never_exits_on_its_own_when_nothing_is_assigned():
     assert official.calls == 25
 
 
-# -- worker ----------------------------------------------------------------------------------
 
 
 def _grant(**overrides):
@@ -1005,7 +983,7 @@ class FakeWorkerOfficial:
         self.execution_ids.append(execution_id)
         self.grants.append(seat_id)
         result = self.grant_result
-        if isinstance(result, list):  # one answer per call; the last one repeats
+        if isinstance(result, list):
             result = result.pop(0) if len(result) > 1 else result[0]
         if isinstance(result, Exception):
             raise result
@@ -1075,8 +1053,6 @@ def _finish_line(capsys, termination_reason="completed", returns=None, final_res
 
 
 def test_worker_says_won_or_lost_from_the_games_own_result_werewolf(capsys):
-    # Werewolf's returns are keyed by player name, not by agent id, so the
-    # finished line used to say nothing about the result.
     result = {"returns": {"Player 1": -1.0, "Player 2": 1.0}, "your_return": 1.0, "status": "completed",
               "result": {"winning_team": "wolves", "seats": {"synthetic-1": {"outcome": "win", "team": "wolves"}}}}
 
@@ -1216,10 +1192,8 @@ def test_worker_temporary_failure_before_reaching_the_game_is_not_connected():
     ],
 )
 def test_worker_that_lost_the_connection_after_reaching_the_game_exits_connection_lost(error, capsys):
-    # run_game gave up after 90 s of temporary failures. The supervisor needs
-    # to know why (a lost connection, not an agent error) to restart it soon.
     def failing(game, context, contestant):
-        game.contacted = True  # GameAPI answered at least once
+        game.contacted = True
         raise error
 
     code, _, _ = _worker(run_game_fn=failing)
@@ -1230,8 +1204,6 @@ def test_worker_that_lost_the_connection_after_reaching_the_game_exits_connectio
 
 @pytest.mark.parametrize("contacted", [False, True])
 def test_worker_whose_call_the_server_cant_handle_is_a_match_failure(contacted):
-    # An isError answer (arguments the server rejected, or its tool crashed)
-    # isn't a connection problem, before or after reaching the game.
     def failing(game, context, contestant):
         game.contacted = contacted
         raise MCPToolError("MCP tool 'play_action' failed at the protocol level: 1 validation error",
@@ -1244,14 +1216,12 @@ def test_worker_whose_call_the_server_cant_handle_is_a_match_failure(contacted):
 
 @pytest.mark.parametrize("as_decision_error", [False, True])
 def test_worker_whose_move_cant_be_sent_as_json_is_a_match_failure_not_a_lost_connection(as_decision_error, capsys):
-    # A move holding, say, a numpy number never leaves the process. That is a
-    # bug in the agent's code: "match failed", never "lost the connection".
     unsendable = MCPToolError("MCP tool 'play_action' can't send its arguments as JSON: Unable to serialize",
                               status_code=None, error_code=None, local_error=True)
 
     def failing(game, context, contestant):
         game.contacted = True
-        if as_decision_error:  # as run_game reports it for a move or message
+        if as_decision_error:
             raise DecisionError("choose_action returned a move that can't be sent") from unsendable
         raise unsendable
 
@@ -1271,12 +1241,10 @@ def test_worker_ctrl_c_exits_quietly():
     assert code == EXIT_SUCCESS
 
 
-# -- resilience: hiccups never become no-shows, and a game that was playing is picked up fast --
 
 
 def _run_ticks(h, ticks, advance, exitcode):
-    """Tick ``ticks`` times; every worker started fails at once with
-    ``exitcode``. Returns the clock times at which workers started."""
+
     starts = []
     for _ in range(ticks):
         before = len(h.factory.processes)
@@ -1288,9 +1256,7 @@ def _run_ticks(h, ticks, advance, exitcode):
 
 
 def test_a_game_not_reached_yet_is_tried_again_every_poll_while_its_connect_window_is_open():
-    # Was: attempts at 0, 70, 200 and 450 s, so a burst of failures at round
-    # start (the platform busy) missed the 220 s window: a no-show loss.
-    h = Harness([tournament_game()])  # connect by 15:03:40, 220 s after NOW
+    h = Harness([tournament_game()])
 
     starts = _run_ticks(h, 80, 10.0, EXIT_NOT_CONNECTED)
 
@@ -1298,8 +1264,6 @@ def test_a_game_not_reached_yet_is_tried_again_every_poll_while_its_connect_wind
     gaps = [later - earlier for earlier, later in zip(in_window, in_window[1:])]
     assert len(in_window) == MIN_CONNECT_WINDOW_SECONDS / 10.0 and max(gaps) == 10.0
     assert "Couldn't reach that game yet (a temporary problem); trying again now." in h.log
-    # Once the window has closed (the platform has decided the game), the
-    # normal backoff applies (each gap also includes the poll that notices the exit).
     late = [t for t in starts if t - starts[0] >= MIN_CONNECT_WINDOW_SECONDS]
     assert [later - earlier for earlier, later in zip(late, late[1:])][:2] == [130.0, 250.0]
 
@@ -1316,7 +1280,7 @@ def test_without_a_deadline_the_connect_window_is_five_minutes_from_when_the_gam
 
 
 def test_a_clock_that_makes_the_deadline_look_passed_still_gets_the_fast_retries():
-    h = Harness([tournament_game(connect_deadline_at="2026-10-16T14:50:00Z")])  # 10 min "ago"
+    h = Harness([tournament_game(connect_deadline_at="2026-10-16T14:50:00Z")])
 
     starts = _run_ticks(h, 20, 10.0, EXIT_NOT_CONNECTED)
 
@@ -1324,7 +1288,7 @@ def test_a_clock_that_makes_the_deadline_look_passed_still_gets_the_fast_retries
 
 
 def test_a_later_deadline_keeps_the_window_open_until_then():
-    h = Harness([tournament_game(connect_deadline_at="2026-10-16T15:10:00Z")])  # 600 s after NOW
+    h = Harness([tournament_game(connect_deadline_at="2026-10-16T15:10:00Z")])
 
     h.tick(advance=10.0)
 
@@ -1344,13 +1308,11 @@ def test_a_new_game_for_the_same_seat_gets_a_new_connect_window():
 
 
 def test_a_game_that_was_playing_is_picked_up_again_within_seconds_and_its_count_starts_over():
-    # Was: a worker that played five minutes then hit a blip counted as one
-    # more failure in a row, so the agent was absent 60, 120, 240, 480, 600 s.
     h = Harness([a("seat-1")])
     absences = []
     h.tick()
     for _ in range(5):
-        h.clock["t"] += 300.0  # plays for five minutes, then the worker gives up on a long outage
+        h.clock["t"] += 300.0
         h.factory.processes[-1].finish(EXIT_CONNECTION_LOST)
         h.tick(advance=0.0)
         absences.append(h.state.failed_until["seat-1"] - h.clock["t"])
@@ -1370,7 +1332,7 @@ def test_a_fast_failure_right_after_a_long_run_continues_the_doubling_from_one()
     h.factory.processes[-1].finish(EXIT_CONNECTION_LOST)
     h.tick(advance=0.0)
     h.clock["t"] = h.state.failed_until["seat-1"]
-    h.tick(advance=0.0)  # restarted; this one fails at once
+    h.tick(advance=0.0)
     h.factory.processes[-1].finish(EXIT_MATCH_FAILURE)
     h.tick(advance=0.0)
 
@@ -1379,9 +1341,7 @@ def test_a_fast_failure_right_after_a_long_run_continues_the_doubling_from_one()
 
 
 def _run_workers(h, seconds, run_for, exitcode, poll=10.0):
-    """Poll every ``poll`` seconds for ``seconds``; each worker started runs
-    ``run_for`` seconds, then exits with ``exitcode``. Returns the clock times
-    at which workers started."""
+
     starts, running = [], None
     while h.clock["t"] < seconds:
         before = len(h.factory.processes)
@@ -1398,9 +1358,6 @@ def _run_workers(h, seconds, run_for, exitcode, poll=10.0):
 @pytest.mark.parametrize("run_for", [30.0, 60.0, 100.0])
 @pytest.mark.parametrize("exitcode", [EXIT_MATCH_FAILURE, EXIT_UNEXPECTED])
 def test_an_agent_that_keeps_crashing_during_the_game_is_retried_less_and_less_often(exitcode, run_for):
-    # Was: any worker that ran 30 s or more was restarted after 10 s, whatever
-    # the reason, so an agent that crashed 30 s into each restart was started
-    # (each start one new seat grant) about 72 times an hour.
     h = Harness([a("seat-1")])
 
     starts = _run_workers(h, 3600.0, run_for, exitcode)
@@ -1411,9 +1368,6 @@ def test_an_agent_that_keeps_crashing_during_the_game_is_retried_less_and_less_o
 
 
 def test_a_connection_lost_almost_at_once_is_retried_less_and_less_often():
-    # The worker reached the game, then every call failed until the in-game
-    # retries gave up (about 100 s). Restarting it every 10 s would cost a
-    # new seat grant every ~110 s for as long as the game is broken.
     h = Harness([a("seat-1")])
 
     starts = _run_workers(h, 3600.0, TRANSIENT_GIVE_UP_SECONDS + 10.0, EXIT_CONNECTION_LOST)
@@ -1424,17 +1378,14 @@ def test_a_connection_lost_almost_at_once_is_retried_less_and_less_often():
 
 
 def test_after_the_connect_window_a_worker_that_never_gets_in_is_retried_less_and_less_often():
-    # A real EXIT_NOT_CONNECTED worker has already retried its grant for a
-    # minute or more. Was: after the window closed it still counted as
-    # "playing" (it ran 30 s or more), so it was replaced every 80-90 s forever.
-    h = Harness([tournament_game()])  # window: MIN_CONNECT_WINDOW_SECONDS from the first listing
+    h = Harness([tournament_game()])
 
     starts = _run_workers(h, 3600.0, 70.0, EXIT_NOT_CONNECTED)
 
     window_end = starts[0] + MIN_CONNECT_WINDOW_SECONDS
     in_window = [t for t in starts if t < window_end]
     gaps = [later - earlier for earlier, later in zip(in_window, in_window[1:])]
-    assert gaps and set(gaps) == {80.0}  # replaced in the poll that notices the exit
+    assert gaps and set(gaps) == {80.0}
     late = [t for t in starts if t >= window_end]
     late_gaps = [later - earlier for earlier, later in zip(late, late[1:])]
     assert late_gaps[:3] == [70.0 + wait + 10.0 for wait in (120.0, 240.0, 480.0)]
@@ -1443,9 +1394,9 @@ def test_after_the_connect_window_a_worker_that_never_gets_in_is_retried_less_an
 
 def test_an_agent_error_after_a_long_healthy_run_starts_a_new_count():
     h = Harness([a("seat-1")])
-    h.state.seat_failures["seat-1"] = 3  # earlier trouble in this game
+    h.state.seat_failures["seat-1"] = 3
     h.tick()
-    h.clock["t"] += SEAT_FAILURE_BACKOFF_MAX_SECONDS  # then ten minutes of play
+    h.clock["t"] += SEAT_FAILURE_BACKOFF_MAX_SECONDS
     h.factory.processes[-1].finish(EXIT_MATCH_FAILURE)
     h.tick(advance=0.0)
 
@@ -1458,7 +1409,7 @@ def test_a_worker_turned_away_by_its_registration_is_retried_every_30s_without_c
     starts = _run_ticks(h, 10, 10.0, EXIT_REGISTRATION_INCOMPLETE)
 
     gaps = [later - earlier for earlier, later in zip(starts, starts[1:])]
-    assert gaps and set(gaps) == {REGISTRATION_RETRY_SECONDS + 10.0}  # plus the poll that notices the exit
+    assert gaps and set(gaps) == {REGISTRATION_RETRY_SECONDS + 10.0}
     assert h.state.seat_failures == {}
     assert "That game can't start until your registration is complete; checking again in 30s." in h.log
 
@@ -1473,8 +1424,6 @@ RULES_MESSAGE = ("Accept the updated Official Rules on your dashboard "
 
 
 def test_updated_rules_never_stop_the_runtime_or_its_running_games():
-    # Was: fatal; the runtime printed "Stopped due to an unrecoverable error"
-    # and exited, and every later game was a no-show.
     h = Harness([a("seat-1")], *([RULES_UPDATED] * 4), [a("seat-1"), a("seat-2")])
     h.tick()
     worker = h.factory.processes[0]
@@ -1483,9 +1432,9 @@ def test_updated_rules_never_stop_the_runtime_or_its_running_games():
         h.tick(advance=REGISTRATION_RETRY_SECONDS)
 
     assert not worker.terminated and h.state.registry.is_active("seat-1")
-    assert h.log.count(RULES_MESSAGE) == 1  # said once, not every 30 s
+    assert h.log.count(RULES_MESSAGE) == 1
     assert h.official.calls == 5
-    h.tick(advance=REGISTRATION_RETRY_SECONDS)  # accepted on the dashboard
+    h.tick(advance=REGISTRATION_RETRY_SECONDS)
     assert h.log[-3:] == ["Assignment discovery recovered.", "Match assigned: pokemon_vgc_doubles_draft",
                           "Starting match..."]
     assert h.started() == ["seat-1", "seat-2"]
@@ -1509,16 +1458,16 @@ def test_real_client_updated_rules_mid_run_keep_the_runtime_going():
     backend = RefreshBackend(assignments=[official_assignment("seat-1")])
     h = _real_harness(backend)
     h.tick()
-    backend.valid.clear()  # the hour-long session expires...
+    backend.valid.clear()
     backend.refresh = httpx.Response(403, json={"error": "registration_incomplete",
                                                 "detail": "Finish your tournament registration first.",
-                                                "next_step": "rules"})  # ...after a Rules update
+                                                "next_step": "rules"})
 
     h.tick()
 
     assert RULES_MESSAGE in h.log and not h.factory.processes[0].terminated
 
-    backend.refresh = None  # the contestant accepted the new Rules
+    backend.refresh = None
     h.tick(advance=REGISTRATION_RETRY_SECONDS)
     assert h.log[-1] == "Assignment discovery recovered."
 
@@ -1543,7 +1492,6 @@ def test_a_fake_official_without_a_session_hands_none():
     assert h.factory.processes[0].args[0].agent_session is None
 
 
-# -- worker: getting into the game ------------------------------------------------------------
 
 
 class WorkerClock:
@@ -1676,7 +1624,6 @@ def test_the_game_session_counts_as_reached_only_after_gameapi_answers(monkeypat
     assert game.contacted is True
 
 
-# -- a key that stopped being accepted (rotated or revoked) while running --------------------
 
 KEY_REFUSED = OfficialAgentError(
     "The Official Agent Key was not accepted. Check that your agent is set to Self-hosted ...",
@@ -1685,7 +1632,6 @@ KEY_REFUSED = OfficialAgentError(
 
 
 def test_worker_refused_the_key_says_so_and_exits_with_its_own_code(capsys):
-    # Was: "unexpected error: OfficialAgentError(...)" and exit 2, retried with backoff.
     code, runs, officials, clock = _clocked_worker(KEY_REFUSED)
 
     assert code == EXIT_KEY_REFUSED and runs == [] and clock.sleeps == []
@@ -1719,13 +1665,13 @@ def test_after_a_refused_key_no_new_game_is_started_and_it_is_said_once():
     h.tick()
     h.official.listings = [[a("seat-1"), a("seat-2"), a("seat-3"), a("seat-4")]]
     for _ in range(10):
-        h.tick(advance=120.0)  # well past every retry pause
+        h.tick(advance=120.0)
 
-    assert h.started() == ["seat-1", "seat-2", "seat-3"]  # seat-4 and the retries never start
+    assert h.started() == ["seat-1", "seat-2", "seat-3"]
     assert h.log.count(KEY_REFUSED_MESSAGE) == 1
     assert "put your new key in .env" in KEY_REFUSED_MESSAGE.lower() and "restart" in KEY_REFUSED_MESSAGE
-    assert not h.factory.processes[2].terminated  # a game already running keeps playing
+    assert not h.factory.processes[2].terminated
     h.factory.processes[2].finish(EXIT_SUCCESS)
     h.tick()
-    assert h.log[-1] == "Match finished."  # not "Waiting for your next game...": none will start
+    assert h.log[-1] == "Match finished."
     assert WAITING_MESSAGE not in h.log

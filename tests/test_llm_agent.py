@@ -1,16 +1,3 @@
-"""Tests for the general-purpose example LLM agent (examples/llm_agent.py),
-its Pokémon structured-action adapters (examples/llm/pokemon.py), and its
-provider layer (examples/llm/providers.py).
-
-The model is always mocked — a scripted ``FakeProvider`` or an
-``httpx.MockTransport`` behind the real ``OpenAIProvider`` — so no test ever
-reaches OpenAI or uses a real key. Game payloads mirror Agent_ACP GameAPI's
-shapes: Werewolf from ``runtime_adapters/openspiel_adapter.py`` (plain
-``{action_id, label}`` legal actions, ``players``/``your_position``/
-``game_state``/``new_messages`` state), Pokémon from ``pokemon_adapter``
-(see tests/test_smoke_agent.py).
-"""
-
 from __future__ import annotations
 
 import json
@@ -36,11 +23,10 @@ PASS = {"type": "pass"}
 FAKE_KEY = "sk-test-DO-NOT-LEAK-1234567890"
 
 
-# -- fixtures ------------------------------------------------------------------------------
 
 
 class FakeProvider:
-    """Returns scripted answers in order (a dict, or an exception to raise)."""
+
 
     model = "fake-model"
 
@@ -89,7 +75,6 @@ def _state(*legal, **kwargs) -> GameState:
     return GameState.from_mcp_state(_raw_state(*legal, **kwargs))
 
 
-# Pokémon payloads
 
 
 def _templated(action_id, template):
@@ -127,7 +112,6 @@ def _doubles(slot_0, slot_1, forced=(False, False)):
                                         "instructions": "Submit one action per slot..."})
 
 
-# Werewolf payloads
 
 PLAYERS = [{"position": i, "name": f"Player{i}", "agent_id": f"a{i}"} for i in range(7)]
 
@@ -153,7 +137,7 @@ def _ww(*legal, **kwargs) -> GameState:
 
 
 class ScriptedGame:
-    """A fake MCPGameSession for the real run_game loop."""
+
 
     def __init__(self, states, result, send_results=()):
         self.states = list(states)
@@ -185,7 +169,6 @@ class ScriptedGame:
 RESULT = {"is_terminal": True, "status": "completed", "returns": {"a": 1.0}, "termination_reason": "normal"}
 
 
-# -- generic core ---------------------------------------------------------------------------
 
 
 def test_discrete_action_is_one_exact_legal_action_with_reasoning():
@@ -277,7 +260,6 @@ def test_unknown_structured_template_fails_the_match_through_the_runner():
 
 
 def test_template_detection_treats_concrete_payloads_as_ordinary_actions():
-    # A draft pick's input.action is a finished move, not a template.
     provider = FakeProvider(_answer(action_id="draft_pick:b"))
 
     decision = _agent(provider).choose_action(_state(*_draft("a", "b"), phase="draft"), POKEMON)
@@ -311,7 +293,6 @@ def test_no_legal_actions_is_a_clear_error():
         _agent(FakeProvider()).choose_action(GameState.from_mcp_state({"session_id": "s"}), POKEMON)
 
 
-# -- Pokémon ---------------------------------------------------------------------------------
 
 
 def test_pokemon_draft_pick():
@@ -409,7 +390,7 @@ def test_pokemon_double_switch_conflict_is_retried():
 
 def test_pokemon_pass_only_slot_and_both_pass_rule():
     provider = FakeProvider(
-        _answer(slot_0={"option": 1, "target": None}, slot_1={"option": 1, "target": None}),  # both pass: invalid
+        _answer(slot_0={"option": 1, "target": None}, slot_1={"option": 1, "target": None}),
         _answer(slot_0={"option": 0, "target": None}, slot_1={"option": 1, "target": None}),
     )
 
@@ -467,7 +448,6 @@ def test_pokemon_full_loop_propagates_reasoning_and_skips_waits():
     assert game.play_calls[1]["reasoning_summary"] == "Fake Out their lead while Rillaboom sets up."
 
 
-# -- Werewolf ---------------------------------------------------------------------------------
 
 
 def test_werewolf_night_action():
@@ -505,7 +485,7 @@ def test_werewolf_message_send_broadcast_and_private():
     assert isinstance(first, SendMessage) and first.content == "Player4 is lying." and first.recipients == []
     assert second.recipients == [5]
     schema = provider.calls[0]["schema"]
-    assert "reasoning_summary" not in schema["properties"]  # chat and public reasoning are separate
+    assert "reasoning_summary" not in schema["properties"]
     prompt = provider.prompt()
     assert prompt["recent_messages"] == [{"from": "Player4", "to": "everyone", "text": "I am the seer."}]
     assert prompt["decision"] == "message"
@@ -513,7 +493,7 @@ def test_werewolf_message_send_broadcast_and_private():
 
 def test_werewolf_message_invalid_recipient_retries_and_long_text_is_capped():
     provider = FakeProvider(
-        {"decision": "send", "message": "hi", "recipient": 2},  # self
+        {"decision": "send", "message": "hi", "recipient": 2},
         {"decision": "send", "message": "word " * 100, "recipient": None},
     )
 
@@ -546,7 +526,7 @@ def test_werewolf_model_ending_the_round_stops_further_message_calls_until_next_
     assert agent.choose_message(_ww(phase="messaging", version=5), WEREWOLF) is TERMINATE_MESSAGING
     assert agent.choose_message(_ww(phase="messaging", version=5), WEREWOLF) is TERMINATE_MESSAGING
     assert agent.message_calls == 1
-    agent.choose_message(_ww(phase="messaging", version=9), WEREWOLF)  # next day's round
+    agent.choose_message(_ww(phase="messaging", version=9), WEREWOLF)
     assert agent.message_calls == 2
 
 
@@ -559,7 +539,7 @@ def test_werewolf_message_fallback_ends_the_round():
 
 
 def test_werewolf_full_loop():
-    """Wait -> night action -> discussion (send, end, auto-end) -> day vote -> wait -> terminal."""
+
     provider = FakeProvider(
         _answer(action_id="3", reasoning_summary="Night: I chose Player3."),
         {"decision": "send", "message": "I think Player4 is a wolf.", "recipient": None},
@@ -570,14 +550,14 @@ def test_werewolf_full_loop():
     vote = _ww_actions(("0", "Vote to lynch Player0"), ("4", "Vote to lynch Player4"), ("7", "Abstain"))
     game = ScriptedGame(
         [
-            _ww_raw(my_turn=False, sub_phase="night_wolf", version=1),                        # get_state: waiting
-            _ww_raw(*night, sub_phase="night_wolf", version=1),                                # wait -> my night move
-            _ww_raw(phase="messaging", my_turn=False, version=2, messages=[(0, 5, "Morning.")]),  # after move
+            _ww_raw(my_turn=False, sub_phase="night_wolf", version=1),
+            _ww_raw(*night, sub_phase="night_wolf", version=1),
+            _ww_raw(phase="messaging", my_turn=False, version=2, messages=[(0, 5, "Morning.")]),
             _ww_raw(phase="messaging", my_turn=False, version=2, messages=[(1, 2, "I think..."), (2, 4, "Not me!")]),
             _ww_raw(phase="messaging", my_turn=False, version=2, messages=[(3, 6, "Vote soon.")]),
-            _ww_raw(*vote, version=2),                                                         # get_state: vote
-            _ww_raw(my_turn=False, version=3),                                                 # after vote
-            _ww_raw(my_turn=False, version=4, terminal=True),                                  # wait -> over
+            _ww_raw(*vote, version=2),
+            _ww_raw(my_turn=False, version=3),
+            _ww_raw(my_turn=False, version=4, terminal=True),
         ],
         RESULT,
         send_results=[{"phase": "messaging"}, {"phase": "messaging"}, {"phase": "moving"}],
@@ -610,7 +590,6 @@ def test_no_model_call_while_waiting_or_after_terminal():
     assert provider.calls == [] and game.waits == 2
 
 
-# -- reasoning plumbing -------------------------------------------------------------------------
 
 
 def test_with_reasoning_validates_inner_action_and_rejects_resign():
@@ -639,7 +618,6 @@ def test_mcp_play_action_sends_reasoning_summary_only_when_given(monkeypatch):
     assert calls[1] == {"session_id": "s", "state_version": 2, "action": {"type": "t"}, "reasoning_summary": "Because."}
 
 
-# -- provider -----------------------------------------------------------------------------------------
 
 
 def _openai(handler, **kwargs):
@@ -681,11 +659,10 @@ def test_openai_malformed_replies_raise_provider_error(response):
 
 def test_api_key_never_appears_in_errors_logs_or_repr(capsys):
     def handler(request):
-        # Real providers can echo part of the key in an auth error body.
         return httpx.Response(401, json={"error": {"message": f"Incorrect API key provided: {FAKE_KEY}"}})
 
     provider = _openai(handler)
-    agent = LLMAgent(provider)  # default log=print
+    agent = LLMAgent(provider)
 
     decision = agent.choose_action(_state({"action_id": "a"}), POKEMON)
     agent.choose_message(_ww(phase="messaging"), WEREWOLF)
@@ -756,8 +733,6 @@ def _named_move(move_id, target_options):
 
 
 def test_pokemon_prompt_names_every_target_and_sends_the_integer_back():
-    # The real turn-4 board: own [Dondozo, Chien-Pao] vs [Hatterene, Cresselia].
-    # The model once attacked its own Dondozo reading -1 as a foe.
     wave_crash = _named_move("wavecrash", [
         {"target": -2, "side": "ally", "species": "chienpao"},
         {"target": 1, "side": "opponent", "species": "hatterene"},
@@ -782,7 +757,6 @@ def test_pokemon_prompt_names_every_target_and_sends_the_integer_back():
     assert "target_options" not in prompt["slots"][1]["options"][0]
     for word in ("SELF", "ALLY", "OPPONENT"):
         assert word in prompt["instructions"]
-    # Ally targeting stays legal, and GameAPI still receives the plain integer.
     assert decision.action["slot_0"] == {"type": "move", "move_id": "wavecrash", "target": 1}
     assert decision.action["slot_1"] == {"type": "move", "move_id": "sacredsword", "target": -1}
 
@@ -805,7 +779,6 @@ def test_pokemon_self_and_targetless_moves_are_named_too():
 
 
 def test_pokemon_prompt_without_target_options_keeps_the_raw_integers():
-    # An older GameAPI that sends no target_options: unchanged behaviour.
     provider = FakeProvider(_answer(slot_0={"option": 0, "target": 2}, slot_1={"option": 0, "target": None}))
 
     _agent(provider).choose_action(_state(_doubles([_move("fakeout", [1, 2])], [PASS])), POKEMON)
@@ -813,17 +786,16 @@ def test_pokemon_prompt_without_target_options_keeps_the_raw_integers():
     assert provider.prompt()["slots"][0]["options"][0]["targets"] == [1, 2]
 
 
-# -- Pokémon's clocks: 55 s per battle decision, 90 s at Team Preview, 15 s per draft pick ------
 
 
 class TimedProvider:
-    """A provider that takes ``timeout`` and spends scripted seconds on a fake clock."""
+
 
     model = "fake-model"
 
     def __init__(self, clock, *steps, honors_timeout=True):
         self.clock = clock
-        self.steps = list(steps)  # (seconds spent, answer or exception)
+        self.steps = list(steps)
         self.honors_timeout = honors_timeout
         self.timeouts: list[float | None] = []
 
@@ -851,8 +823,8 @@ def test_a_pokemon_battle_decision_never_waits_longer_than_its_budget_even_when_
 
     decision = _timed_agent(provider, clock, log).choose_action(_state(legal), POKEMON)
 
-    assert decision.action == smoke_agent.choose_action(_state(legal), POKEMON)  # the fallback, in time
-    assert clock["t"] <= llm_agent.POKEMON_DECISION_SECONDS < 45  # Showdown plays a default move at 55 s
+    assert decision.action == smoke_agent.choose_action(_state(legal), POKEMON)
+    assert clock["t"] <= llm_agent.POKEMON_DECISION_SECONDS < 45
     assert provider.timeouts == [llm_agent.POKEMON_REQUEST_SECONDS,
                                  llm_agent.POKEMON_DECISION_SECONDS - llm_agent.POKEMON_REQUEST_SECONDS]
     assert any("FALLBACK" in line for line in log)
@@ -871,7 +843,6 @@ def test_a_slow_invalid_first_answer_leaves_the_retry_only_the_time_that_is_left
 
 def test_no_retry_is_started_with_almost_no_time_left():
     clock = {"t": 0.0}
-    # A request that overran its timeout (slow DNS, a proxy) leaves 2 s: too little to try again.
     provider = TimedProvider(clock, (38, _answer(action_id="nope")), honors_timeout=False)
     log: list[str] = []
 

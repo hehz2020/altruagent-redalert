@@ -1,10 +1,3 @@
-"""Tests for altruagent.official: Official Agent Key auth, session caching and
-one-retry-after-401, assignment discovery, seat grants, and the GameAPI-side
-OfficialSeatAuth. Mirrors Agent_ACP backend/src/routes/tournament.ts
-(``/tournament/agent/authenticate``, ``/tournament/agent/assignments``,
-``/tournament/agent/assignments/:seatId/grant``). No real network.
-"""
-
 from __future__ import annotations
 
 import json
@@ -46,9 +39,7 @@ def grant(access_token="seat-jwt-1", seat_id="seat-1"):
 
 
 class Backend:
-    """Mock control plane. Sessions are "sess-N"; ``valid`` holds the ones
-    currently accepted (tests expire them by removing them).
-    """
+
 
     def __init__(self, *, assignments=None, key_valid=True):
         self.assignments = assignments if assignments is not None else []
@@ -89,7 +80,6 @@ def official(backend, **kwargs) -> OfficialAgentClient:
     return OfficialAgentClient(CONTROL, KEY, load_env_file=False, transport=httpx.MockTransport(backend), **kwargs)
 
 
-# -- configuration ---------------------------------------------------------------------
 
 
 def test_key_from_environment(monkeypatch):
@@ -121,7 +111,6 @@ def test_official_auth_repr_hides_key():
     assert KEY not in repr(OfficialAgentAuth(KEY))
 
 
-# -- authentication / session ---------------------------------------------------------------
 
 
 def test_authentication_success_sends_only_the_key():
@@ -130,7 +119,7 @@ def test_authentication_success_sends_only_the_key():
     official(backend).authenticate()
 
     assert backend.auth_bodies == [{"official_agent_key": KEY}]
-    assert backend.requests[0][2] is None  # no bearer on the authenticate call itself
+    assert backend.requests[0][2] is None
 
 
 def test_session_token_is_cached_across_requests():
@@ -149,7 +138,7 @@ def test_expired_session_reauthenticates_once_and_retries():
     backend = Backend(assignments=[assignment()])
     client = official(backend)
     client.assignments()
-    backend.valid.clear()  # the short-lived session expires
+    backend.valid.clear()
 
     result = client.assignments()
 
@@ -167,14 +156,14 @@ def test_second_401_after_reauth_stops_without_looping():
 
     def always_reject_sessions(request):
         response = original(request)
-        backend.valid = set()  # every newly minted session is immediately rejected
+        backend.valid = set()
         return response
 
     client._client._http._transport = httpx.MockTransport(always_reject_sessions)
 
     with pytest.raises(AuthenticationError):
         client.assignments()
-    assert len(backend.auth_bodies) == 2  # initial + exactly one re-authentication
+    assert len(backend.auth_bodies) == 2
 
 
 def test_invalid_key_raises_clear_error_without_the_key():
@@ -195,7 +184,6 @@ def test_invalid_key_message_mentions_self_hosted():
 
 
 def test_invalid_key_message_names_the_rotate_button_not_copying_again():
-    # The dashboard shows a key once; while one exists it offers only Rotate/Revoke.
     with pytest.raises(OfficialAgentError) as exc_info:
         official(Backend(key_valid=False)).authenticate()
 
@@ -269,7 +257,7 @@ def test_a_failed_session_mint_is_reported_as_temporary_not_as_a_bad_key():
     error = _authenticate_error(httpx.Response(401, json={
         "error": "invalid_official_agent_key", "detail": "Failed to mint agent session: Request rate limit reached"}))
 
-    assert error.error_code == "invalid_official_agent_key"  # the platform's code is kept as sent
+    assert error.error_code == "invalid_official_agent_key"
     assert "temporary" in str(error) and "not your key" in str(error)
     assert "Rotate key" not in str(error)
     assert not is_fatal_auth_error(error)
@@ -288,7 +276,6 @@ def test_agent_session_unavailable_is_explained_as_temporary():
         (httpx.Response(401, json={"error": "invalid_official_agent_key",
                                    "detail": "This agent is Oracle Hosted; its Official Agent Key works again..."}), True),
         (httpx.Response(400, json={"error": "invalid_official_agent_key", "detail": "official_agent_key is required."}), True),
-        # Not fatal: the runtime says what to do and keeps trying (updated Official Rules).
         (httpx.Response(403, json={"error": "registration_incomplete", "detail": "rules", "next_step": "rules"}), False),
         (httpx.Response(401, json={"error": "invalid_official_agent_key",
                                    "detail": "Failed to mint agent session: no session returned"}), False),
@@ -297,7 +284,7 @@ def test_agent_session_unavailable_is_explained_as_temporary():
         (httpx.Response(502, text="Bad Gateway"), False),
         (httpx.Response(503, json={"message": "Service Unavailable"}), False),
         (httpx.Response(504, json={"message": "Endpoint request timed out"}), False),
-        (httpx.Response(200, json={}), False),  # no session token in the answer
+        (httpx.Response(200, json={}), False),
     ],
 )
 def test_is_fatal_auth_error_only_for_a_refused_key(response, fatal):
@@ -312,7 +299,6 @@ def test_is_fatal_auth_error_treats_other_errors_as_temporary():
     assert is_fatal_auth_error(OfficialAgentError("not accepted", status_code=401))
 
 
-# -- discovery / grants --------------------------------------------------------------------------
 
 
 def test_no_assignments():
@@ -384,7 +370,6 @@ def test_grant_missing_fields_is_rejected():
         official(backend).grant("seat-1", EXEC)
 
 
-# -- OfficialSeatAuth (GameAPI side) -----------------------------------------------------------------
 
 
 def test_seat_auth_uses_grant_token_for_gameapi_and_regrants_after_401():
@@ -404,12 +389,10 @@ def test_seat_auth_uses_grant_token_for_gameapi_and_regrants_after_401():
     game_client = AltruAgentClient(CONTROL, auth=seat_auth, load_env_file=False, transport=httpx.MockTransport(gameapi))
 
     assert game_client.request("GET", f"{GAMEAPI}/games/game-1") == {"ok": True}
-    assert game_requests == ["Bearer seat-jwt-1", "Bearer seat-jwt-2"]  # renewal = re-grant (reconnect)
+    assert game_requests == ["Bearer seat-jwt-1", "Bearer seat-jwt-2"]
     assert seat_auth.grant.access_token == "seat-jwt-2"
-    # Neither the persistent key nor the agent session ever reaches GameAPI.
     assert all(KEY not in (h or "") and "sess-" not in (h or "") for h in game_requests)
     assert KEY not in repr(seat_auth) and "seat-jwt" not in repr(seat_auth) and EXEC not in repr(seat_auth)
-    # Both the first grant and the GameAPI-401 re-grant carry the same execution_id.
     assert backend.bodies == [(f"{ASSIGNMENTS_PATH}/seat-1/grant", {"execution_id": EXEC})] * 2
 
 
@@ -436,12 +419,12 @@ def test_session_reauthentication_preserves_execution_id():
     backend = Backend()
     client = official(backend)
     client.renew_lease("seat-1", EXEC)
-    backend.valid.clear()  # the agent session expires mid-match
+    backend.valid.clear()
 
     client.renew_lease("seat-1", EXEC)
 
-    assert len(backend.auth_bodies) == 2  # re-authenticated once...
-    assert [body for _, body in backend.bodies] == [{"execution_id": EXEC}] * 2  # ...same lease owner
+    assert len(backend.auth_bodies) == 2
+    assert [body for _, body in backend.bodies] == [{"execution_id": EXEC}] * 2
 
 
 def test_lease_not_held_is_an_official_agent_error():
@@ -466,7 +449,6 @@ def test_seat_auth_rejects_a_renewal_for_a_different_seat():
         seat_auth.login(None, CONTROL)
 
 
-# -- which failures are temporary (retried in place) -----------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -474,7 +456,7 @@ def test_seat_auth_rejects_a_renewal_for_a_different_seat():
     [
         PlatformError("Could not reach the control plane", status_code=None),
         PlatformError("Bad Gateway", status_code=502),
-        PlatformError("internal", status_code=500, error_code="internal_error"),  # e.g. a seat sign-in that failed
+        PlatformError("internal", status_code=500, error_code="internal_error"),
         PlatformError("slow down", status_code=429),
         PlatformError("timeout", status_code=408),
         OfficialAgentError("slow down", status_code=429, error_code="rate_limited"),
@@ -512,7 +494,6 @@ def test_definite_answers_are_not_temporary(error):
     assert not is_transient_error(error)
 
 
-# -- one sign-in per runtime, not one per game ------------------------------------------------
 
 
 def test_session_token_is_none_before_signing_in_and_never_signs_in_itself():
@@ -536,7 +517,7 @@ def test_a_worker_reuses_the_runtimes_session_instead_of_signing_in_again():
     worker.use_session_token(runtime.session_token())
     worker.grant("seat-1", EXEC)
 
-    assert len(backend.auth_bodies) == 1  # only the runtime's own sign-in
+    assert len(backend.auth_bodies) == 1
     assert backend.requests[-1][2] == "Bearer sess-1"
 
 

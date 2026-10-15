@@ -1,40 +1,10 @@
-"""Example: a deterministic infrastructure smoke-test agent — valid moves, no strategy.
-
-Plays every phase of `pokemon_vgc_doubles_draft` (draft -> Team Preview ->
-doubles battle) and all of Werewolf by building the simplest valid action
-from what GameAPI offers, so a live self-hosted test match can run end to
-end. No LLM, no API keys, no randomness, no memory between turns. It does
-not play Red Alert (no `legal_actions` there; see `llm_agent.py`).
-
-- Anything enumerable (Pokémon draft picks, every Werewolf action):
-  `state.legal_actions[0]`, exactly like `basic_agent.py`.
-- Pokémon Team Preview (`select_lineup`): the first 4 species of the roster
-  in the action template, leading with the first 2.
-- Pokémon doubles turn (`doubles_turn`): per slot, pass if pass is the only
-  option; else the first move (first positive target — an opponent — if the
-  move takes one, otherwise its first target, omitted when it has none);
-  else the first switch the other slot didn't already pick; else pass if
-  offered.
-
-Both Pokémon templates arrive as a single legal action whose
-`input["action"]` describes what to submit (Agent_ACP gameapi
-`pokemon_adapter/teampreview_mapper.py` `teampreview_action_schema`,
-`pokemon_adapter/doubles_action_mapper.py` `build_doubles_legal_actions`).
-A template that doesn't have the expected shape raises `SmokeAgentError`
-(the runner reports it as a DecisionError) rather than sending a guess.
-
-Run it for your test matches (add --tournament for your tournament games):
-
-    python -m agent --match --agent examples.smoke_agent
-"""
-
 from altruagent import DecisionContext, GameState, LegalAction
 
 _PASS = {"type": "pass"}
 
 
 class SmokeAgentError(ValueError):
-    """The server offered an action template this agent can't read."""
+    pass
 
 
 def choose_action(state: GameState, context: DecisionContext) -> LegalAction | dict:

@@ -1,41 +1,3 @@
-"""Entry point for `python -m agent`.
-
-One way to run your agent: set `ALTRUAGENT_OFFICIAL_AGENT_KEY` to your
-Official Agent Key (from the tournament dashboard) and run
-
-    python -m agent --tournament          # your tournament games
-    python -m agent --match               # your test matches (Testing page)
-    python -m agent --tournament --match  # both, in one process
-
-It authenticates as your registered self-hosted agent and keeps one worker
-process per assigned game of the chosen kind(s) until Ctrl+C
-(`altruagent.supervisor.run_tournament_forever`, which filters assignments
-on their `context`). Nobody copies an id and nobody claims anything. A game
-of the other kind is not played; the runtime says once per game that it is
-waiting. `--check-tournament` verifies the connection and the agent without
-playing. `--agent MODULE[:FACTORY]` picks a different factory than
-`agent.agent:create_agent`.
-
-Retired modes only print a notice pointing to the command above (see
-`altruagent.notices`):
-
-- `python -m agent` with no mode: the old platform API-key mode
-  (`ALTRUAGENT_API_KEY`), turned off on the platform.
-- `--claim seatclaim_...` (and `ALTRUAGENT_CLAIM_TOKEN`): Testing claim
-  codes, replaced by the Official Agent Key.
-
-This file is deliberately thin — the assignment loop and worker lifecycle
-live in `altruagent.supervisor`, one seat's setup in `altruagent.worker`,
-and one game's play loop in `altruagent.runner`.
-
-IMPORTANT (Windows multiprocessing): the `if __name__ == "__main__":` guard
-at the bottom of this file is not just style — `multiprocessing`'s `spawn`
-start method (required on Windows, used here unconditionally so behavior is
-identical everywhere) re-imports this exact module in every worker process.
-Without the guard, each freshly-spawned worker would re-run `main()` itself
-and spawn further workers recursively.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -55,12 +17,11 @@ CLAIM_TOKEN_ENV = "ALTRUAGENT_CLAIM_TOKEN"
 
 
 def _retired(notice: str) -> int:
-    """Print a retired mode's notice and fail: nothing was run."""
+
     print(notice)
     return 1
 
 
-# What the runtime says it plays, by the kinds the flags chose.
 PLAYING_MESSAGES = {
     ALL_KINDS: "Playing your test matches and tournament games.",
     frozenset({TOURNAMENT}): "Playing your tournament games only. Add --match to also play your test matches.",
@@ -69,12 +30,9 @@ PLAYING_MESSAGES = {
 
 
 def _run_tournament(agent_spec: str, kinds: frozenset[str] = ALL_KINDS) -> int:
-    """The runtime: authenticate with the Official Agent Key, then keep one
-    worker process per assigned game of the chosen ``kinds`` (test matches,
-    tournament games or both) until Ctrl+C.
-    """
+
     try:
-        _load_agent_factory(agent_spec)  # validated eagerly; built once per match, in its worker
+        _load_agent_factory(agent_spec)
     except ValueError as exc:
         print(f"Startup error: {exc}")
         return 1
@@ -92,10 +50,6 @@ def _run_tournament(agent_spec: str, kinds: frozenset[str] = ALL_KINDS) -> int:
             if not is_registration_incomplete(exc):
                 print(f"Could not connect with your Official Agent Key: {exc}")
                 return 1
-            # The key is fine; the registration needs the contestant (for
-            # example updated Official Rules to accept). The loop below says
-            # what to do and keeps trying, so the runtime plays as soon as
-            # they have.
         else:
             print("Connected with your Official Agent Key.")
         print(PLAYING_MESSAGES[kinds])
@@ -113,7 +67,7 @@ def _run_tournament(agent_spec: str, kinds: frozenset[str] = ALL_KINDS) -> int:
 
 
 def _mark(symbol: str, fallback: str) -> str:
-    """``symbol`` if the console can print it (a redirected Windows console may not)."""
+
     try:
         symbol.encode(sys.stdout.encoding or "ascii")
         return symbol
@@ -122,9 +76,7 @@ def _mark(symbol: str, fallback: str) -> str:
 
 
 def _check_tournament(agent_spec: str) -> int:
-    """Pre-tournament connection check. Needs no assigned match; never prints
-    the key or any token. Returns 0 only if every step passes.
-    """
+
     ok_mark, fail_mark = _mark("✓", "[ok]"), _mark("✗", "[FAIL]")
 
     def ok(message: str) -> None:
@@ -164,7 +116,7 @@ def _check_tournament(agent_spec: str) -> int:
 
         try:
             _resolve_decision_fn(_load_agent_factory(agent_spec)())
-        except Exception as exc:  # noqa: BLE001 - contestant code
+        except Exception as exc:
             return fail(f"Agent {agent_spec} could not be created: {exc}")
         ok(f"Agent ready ({agent_spec})")
         ok("Ready to play Testing and tournament games")
@@ -208,9 +160,6 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    # --tournament and --match may be combined (both kinds in one process);
-    # each excludes --check-tournament and --claim. --match's exclusions are
-    # checked in main(): argparse puts an option in one exclusive group only.
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--tournament",
@@ -233,8 +182,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="check your Official Agent Key, connection and agent without playing anything",
     )
-    # Retired: Testing claim codes. Still parsed so an old command prints the
-    # notice instead of an argparse error; hidden from --help.
     mode.add_argument("--claim", nargs="?", const="", metavar="TOKEN", help=argparse.SUPPRESS)
     parser.add_argument(
         "--agent",

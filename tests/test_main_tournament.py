@@ -1,9 +1,3 @@
-"""CLI tests for ``python -m agent --tournament`` / ``--match`` /
-``--check-tournament``. The official client and the supervisor loop are
-replaced by fakes; no network, no processes. The retired modes (no mode,
-``--claim``) are covered by tests/test_main.py.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -60,7 +54,6 @@ def _install(monkeypatch, official=None, *, supervisor=None):
     return official, calls
 
 
-# -- --tournament -----------------------------------------------------------------------
 
 
 def test_tournament_mode_authenticates_and_runs_the_tournament_supervisor(env, monkeypatch, capsys):
@@ -97,8 +90,7 @@ def test_each_flag_chooses_which_kinds_of_game_one_process_plays(env, monkeypatc
 
 
 def _run_with_the_real_supervisor(monkeypatch, argv):
-    """``main(argv)`` with the real supervisor loop (3 polls, fake processes)
-    over one test match and one tournament game without a ``context``."""
+
     from functools import partial
 
     from altruagent import supervisor
@@ -193,9 +185,6 @@ def test_tournament_mode_authentication_failure(env, monkeypatch, capsys):
 
 
 def test_tournament_mode_with_updated_rules_keeps_running_and_says_what_to_do(env, monkeypatch, capsys):
-    # Was: "Could not connect with your Official Agent Key: ..." and exit 1.
-    # The key is fine; the runtime waits for the contestant to accept the
-    # updated Official Rules, then plays.
     from functools import partial
 
     from altruagent import supervisor
@@ -268,7 +257,6 @@ def test_modes_are_mutually_exclusive(env, monkeypatch, argv):
     assert exc_info.value.code == 2 and calls == []
 
 
-# -- --check-tournament ---------------------------------------------------------------------------
 
 
 def _check(monkeypatch, capsys, official, argv=("--check-tournament",)):

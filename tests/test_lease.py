@@ -1,14 +1,3 @@
-"""Tests for the official seat execution lease, per Agent_ACP's final contract
-(backend/src/routes/tournament.ts, services/officialAgentConnectionService.ts):
-
-- ``POST .../:seatId/grant {execution_id}`` acquires the lease if absent or
-  expired (``409 seat_busy`` if another execution holds it), extends it, and
-  mints a SeatGrant.
-- ``POST .../:seatId/lease/renew {execution_id}`` only extends a still-active
-  lease this execution owns (``409 lease_not_held`` otherwise); mints nothing.
-- The lease lasts 30 s and belongs to the execution_id, not the agent session.
-"""
-
 from __future__ import annotations
 
 import json
@@ -44,7 +33,7 @@ NOT_HELD = OfficialAgentError("not held", status_code=409, error_code="lease_not
 
 
 class ScriptedOfficial:
-    """Scripted renew_lease/grant results (the last of each repeats)."""
+
 
     def __init__(self, renewals=(None,), grants=(None,)):
         self.renew_results, self.grant_results = list(renewals), list(grants)
@@ -75,7 +64,6 @@ def keeper(official, **kwargs):
     return SeatLeaseKeeper(official, "seat-1", EXEC_A, log=log.append, **kwargs), log
 
 
-# -- keeper -------------------------------------------------------------------------------
 
 
 def test_routine_renewal_uses_lease_renew_not_grant():
@@ -162,7 +150,6 @@ def test_execution_ids_are_random_opaque_and_in_bounds():
     assert len(ids) == 50 and all(16 <= len(i) <= 256 for i in ids)
 
 
-# -- against a mock backend with the real lease rule ------------------------------------------
 
 
 class LeaseBackend:
@@ -212,10 +199,10 @@ def test_renewal_keeps_the_lease_without_minting_and_blocks_other_runtimes():
     runtime_a.grant("seat-1", EXEC_A)
     keeper_a = SeatLeaseKeeper(runtime_a, "seat-1", EXEC_A, log=lambda m: None)
 
-    for _ in range(6):  # a minute of healthy 10 s renewals
+    for _ in range(6):
         backend.now += LEASE_RENEW_SECONDS
         assert keeper_a.renew_once() == LEASE_RENEW_SECONDS
-    assert backend.minted == 1  # keepalive never minted a SeatGrant
+    assert backend.minted == 1
 
     with pytest.raises(OfficialAgentError) as exc_info:
         runtime_b.grant("seat-1", EXEC_B)
@@ -228,7 +215,7 @@ def test_session_reauthentication_does_not_self_evict():
     runtime.grant("seat-1", EXEC_A)
     k = SeatLeaseKeeper(runtime, "seat-1", EXEC_A, log=lambda m: None)
 
-    backend.valid.clear()  # the agent session expires
+    backend.valid.clear()
     backend.now += LEASE_RENEW_SECONDS
 
     assert k.renew_once() == LEASE_RENEW_SECONDS and not k.lost.is_set()
@@ -241,7 +228,7 @@ def test_other_runtime_takes_over_only_after_the_lease_lapses_then_the_first_los
     runtime_a.grant("seat-1", EXEC_A)
     keeper_a = SeatLeaseKeeper(runtime_a, "seat-1", EXEC_A, log=lambda m: None)
 
-    backend.now += LEASE_TTL + 1  # A went silent long enough to lapse
+    backend.now += LEASE_TTL + 1
     runtime_b.grant("seat-1", EXEC_B)
     backend.now += 1
 
@@ -256,7 +243,7 @@ def test_lapsed_lease_nobody_took_is_reacquired_in_place():
     runtime.grant("seat-1", EXEC_A)
     k = SeatLeaseKeeper(runtime, "seat-1", EXEC_A, log=lambda m: None)
 
-    backend.now += LEASE_TTL + 5  # e.g. a long network outage
+    backend.now += LEASE_TTL + 5
 
     assert k.renew_once() == LEASE_RENEW_SECONDS and not k.lost.is_set()
     assert backend.calls[-2:] == [("renew", EXEC_A), ("grant", EXEC_A)]
@@ -268,7 +255,7 @@ def test_gameapi_401_regrant_uses_the_same_execution_id():
 
     seat_auth.login(None, CONTROL)
     backend.now += 5
-    seat_auth.login(None, CONTROL)  # what a GameAPI 401 triggers
+    seat_auth.login(None, CONTROL)
 
     assert backend.calls == [("grant", EXEC_A), ("grant", EXEC_A)]
     assert seat_auth.grant.access_token == "seat-jwt-2"
@@ -284,7 +271,7 @@ def test_concurrent_renewal_and_regrant_share_one_session():
     def call(fn):
         try:
             fn()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=call, args=(lambda: runtime.renew_lease("seat-1", EXEC_A),)),
@@ -294,10 +281,9 @@ def test_concurrent_renewal_and_regrant_share_one_session():
     for thread in threads:
         thread.join()
 
-    assert errors == [] and backend.sessions == 2  # exactly one re-authentication
+    assert errors == [] and backend.sessions == 2
 
 
-# -- worker ----------------------------------------------------------------------------------------
 
 
 def _run_worker(official, run_game_fn, **kwargs):
@@ -327,10 +313,10 @@ def test_worker_grants_once_renews_periodically_and_keeps_its_gameapi_token():
     time.sleep(0.05)
 
     assert code == EXIT_SUCCESS
-    assert official.grant_calls == [("seat-1", EXEC_A)]  # only the initial acquisition
+    assert official.grant_calls == [("seat-1", EXEC_A)]
     assert renewals_at_exit >= 3 and set(official.renew_calls) == {("seat-1", EXEC_A)}
-    assert seen["token"] == "minted-1"  # renewal never replaced the GameAPI SeatGrant
-    assert len(official.renew_calls) == renewals_at_exit  # renewal stopped with the worker
+    assert seen["token"] == "minted-1"
+    assert len(official.renew_calls) == renewals_at_exit
 
 
 def test_worker_that_loses_its_seat_stops_without_further_gameplay_calls(monkeypatch):
@@ -371,7 +357,6 @@ def test_worker_whose_seat_is_already_held_does_not_play():
     assert runs == []
 
 
-# -- supervisor ------------------------------------------------------------------------------------
 
 
 def test_seat_busy_stops_only_that_seat_and_retries_after_the_lease_can_lapse():

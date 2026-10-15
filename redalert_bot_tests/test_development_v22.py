@@ -1,9 +1,3 @@
-"""Development spending contracts for the frozen macro candidate.
-
-These scripted player-view scenarios test affordability, recovery and request
-reconciliation. They contain no match logs and do not establish a win rate.
-"""
-
 from copy import deepcopy
 
 import pytest
@@ -17,7 +11,7 @@ from redalert_bot_tests.test_economy_v2 import actor, view
 def development_view(*, cash=900, seconds=200, harvesters=1, refineries=1,
                      factory=True, repair_shop=False, vehicle=True,
                      enemies=(), production=(), pending=(), power_surplus=280):
-    """A small defensive opening, with legal production matching its tech."""
+
     buildings = [actor(1, "fact", 10, 10), actor(2, "powr"), actor(3, "tent")]
     buildings += [actor(4 + i, "proc", 14 + 3 * i, 10) for i in range(refineries)]
     if factory:
@@ -39,8 +33,6 @@ def development_view(*, cash=900, seconds=200, harvesters=1, refineries=1,
                    train=train, build=build, enemies=enemies,
                    production=production, pending=pending)
     reference = deepcopy(initial.config)
-    # Public heavy-tank price, rather than an invented cheap fallback. Queue
-    # entries below use the platform's item/count/progress representation.
     reference["rules"]["units"]["3tnk"] = {"cost": 1150, "queue": "Vehicle"}
     initial.raw["observation"]["economy"].update(
         power_provided=120 + power_surplus, power_drained=120)
@@ -50,8 +42,6 @@ def development_view(*, cash=900, seconds=200, harvesters=1, refineries=1,
 def purchases(v, policy=None):
     result = [intent.order for intent in (policy or Economy()).propose(v)
               if intent.order["cmd"] in {"build", "train"}]
-    # Check invariants before individual strategy expectations can fail. Exact
-    # unpaid queue costs are independently asserted in the reservation cases.
     assert purchase_cost(v, result) <= v.funds
     queues = [v.queue(order["item"]) for order in result]
     assert len(queues) == len(set(queues))
@@ -67,8 +57,6 @@ def purchase_cost(v, orders):
 
 def test_single_harvester_keeps_income_packets_for_the_second_refinery():
     policy = Economy()
-    # The second refinery includes a harvester without occupying Vehicle.
-    # Legal cheap units must not consume its protected income packets.
     for seconds, cash in ((200, 600), (205, 1100), (210, 1399)):
         assert purchases(development_view(seconds=seconds, cash=cash), policy) == []
     v = development_view(seconds=215, cash=1400)
@@ -80,7 +68,6 @@ def test_factory_savings_allow_prerequisite_power_then_the_factory():
     low_power = development_view(cash=300, refineries=2, factory=False,
                                  vehicle=False, power_surplus=0)
     assert purchases(low_power, policy) == [{"cmd": "build", "item": "powr"}]
-    # A fresh observation confirms the extra power and enough accumulated cash.
     powered = development_view(seconds=220, cash=2000, refineries=2, factory=False,
                                vehicle=False, power_surplus=100)
     powered.buildings.append(actor(12, "powr", 9, 14))
@@ -132,8 +119,6 @@ def test_stalled_income_releases_defense_budget_after_45_seconds_for_20_seconds(
     policy = Economy()
     assert purchases(development_view(seconds=200), policy) == []
     assert purchases(development_view(seconds=244.99), policy) == []
-    # Proposals are inspected without submitting them; cash and queues remain
-    # unchanged so this isolates the duration of the defensive spending window.
     for seconds in (245, 264.99):
         v = development_view(seconds=seconds)
         result = purchases(v, policy)
@@ -146,7 +131,6 @@ def test_real_income_progress_resets_the_stalled_savings_timer():
     policy = Economy()
     assert purchases(development_view(seconds=200, cash=900), policy) == []
     assert purchases(development_view(seconds=244, cash=950), policy) == []
-    # The original 245-second timeout is no longer a reason to spend the fund.
     assert purchases(development_view(seconds=245, cash=950), policy) == []
     assert purchases(development_view(seconds=288.99, cash=950), policy) == []
     assert purchases(development_view(seconds=289, cash=950), policy)
@@ -159,12 +143,9 @@ def test_unconfirmed_development_orders_are_reserved_and_never_duplicated():
     result = purchases(waiting, policy)
     assert result == [{"cmd": "build", "item": "proc"}]
     assert 1100 + purchase_cost(waiting, result) <= waiting.funds
-    # Neither uncertain request can be repeated or treated as refunded money.
     both_pending = development_view(seconds=205, cash=2500,
                                     pending=[pending_harvester, *result])
     assert purchases(both_pending, policy) == []
-    # A later confirmed view advances to the third miner, not directly to
-    # technology. Its unresolved order can run in parallel with the shop.
     confirmed = development_view(seconds=230, cash=1200, harvesters=2, refineries=2)
     third = purchases(confirmed, policy)
     assert third == [{"cmd": "train", "item": "harv"}]
@@ -182,8 +163,6 @@ def test_heavy_tank_queue_tails_and_pending_infantry_cannot_be_spent_twice(cash)
     production = [{"queue": "Vehicle", "item": "3tnk", "count": 3, "progress": .5}]
     v = development_view(cash=cash, harvesters=4, refineries=2,
                          repair_shop=True, production=production)
-    # Six total core tanks complete development saving. The remaining 600
-    # must really be available to infantry after reserving the queue tails.
     v.units.extend(actor(70 + i, "3tnk") for i in range(3))
     result = purchases(v)
     unpaid_tanks = 1150 * 2.5
