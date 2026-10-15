@@ -88,8 +88,9 @@ all keyed on that pacing field rather than on a game name:
       raising `DecisionError`. `RUNTIME_TEMPORARILY_UNAVAILABLE` is retried
       after `REALTIME_RETRY_SECONDS`.
     - Before the first decision the runner fetches the game's reference
-      (`get_game_config`) once, best-effort, and hands it to decision logic
-      as `context.game_config`.
+      (`get_game_config`), best-effort, and hands it to decision logic as
+      `context.game_config`. Missing references are retried with backoff;
+      a successfully fetched reference is retained for the match.
 
 An agent object may also define `on_action_result(result, context)`: the
 runner calls it after every `play_action` with the server's answer, or with
@@ -193,6 +194,13 @@ _ACTION_SCOPED_ERROR_CODES = frozenset({"INVALID_ACTION"})
 _REALTIME_TRANSIENT_ERROR_CODES = frozenset({"RUNTIME_TEMPORARILY_UNAVAILABLE"})
 REALTIME_RETRY_SECONDS = 1.0
 _REALTIME_PACING = "realtime"
+
+# A failed optional config read must not permanently deprive a real-time
+# agent of its rules and map. Retry independently of the gameplay calls:
+# gameplay continues, and missing/unknown tools cannot be called at the
+# observation rate. Intervals start at 5 s and grow to at most 30 s.
+GAME_CONFIG_RETRY_FIRST_SECONDS = 5.0
+GAME_CONFIG_RETRY_MAX_SECONDS = 30.0
 
 # The runner believed messaging/a capability was available (phase said so)
 # but the adapter disagrees — a genuine runner/adapter mismatch, not a
@@ -517,8 +525,8 @@ def _report_result(hook, result: dict, context: DecisionContext) -> None:
 
 
 def _with_game_config(game: Any, context: DecisionContext) -> DecisionContext:
-    """``context`` with ``game_config`` from ``get_game_config``, fetched once
-    and best-effort: a server or session without it leaves ``None``."""
+    """One best-effort config read. Missing responses leave ``None`` so the
+    real-time loop can retry later without delaying gameplay."""
     getter = getattr(game, "get_game_config", None)
     if context.game_config is not None or not context.game_type or not callable(getter):
         return context
@@ -530,7 +538,7 @@ def _with_game_config(game: Any, context: DecisionContext) -> DecisionContext:
         if isinstance(exc, MCPToolError) or _is_transient(exc):
             return context
         raise
-    return replace(context, game_config=config) if isinstance(config, dict) else context
+    return replace(context, game_config=config) if isinstance(config, dict) and config else context
 
 
 def _validate_decision(decision: Any, legal_actions: list[LegalAction]) -> Union[_Resign, _Wait, _PlayAction]:
@@ -790,8 +798,9 @@ def run_game(
     In a real-time game (``pacing.mode == "realtime"``), ``WAIT`` waits as
     in step 6, ``INVALID_ACTION`` re-reads the state like a race, and
     ``RUNTIME_TEMPORARILY_UNAVAILABLE`` re-reads it after
-    ``REALTIME_RETRY_SECONDS``; ``context.game_config`` is fetched once
-    before the first decision. ``on_action_result`` (optional, on the agent
+    ``REALTIME_RETRY_SECONDS``; ``context.game_config`` is fetched before the
+    first decision and retried with backoff until available. Once available,
+    it is retained for the match. ``on_action_result`` (optional, on the agent
     object) gets every ``play_action`` answer and every recovered refusal.
 
     A race error (``STALE_STATE``/``NOT_YOUR_TURN``/``WRONG_PHASE``/
@@ -858,7 +867,9 @@ def run_game(
             report_timing(record)
 
     long_poll_supported = True
-    config_fetched = False
+    config_retry_at = float("-inf")
+    config_retry_delay = GAME_CONFIG_RETRY_FIRST_SECONDS
+    config_unavailable_logged = False
     retry = _TransientRetry(sleep=sleep, now=now, log=log)
 
     def read(call: Callable[[], Any], *, settles: bool = True, phase: str | None = None) -> Any:
@@ -974,9 +985,18 @@ def run_game(
 
         if state.is_current_actor:
             realtime = _is_realtime(state)
-            if realtime and not config_fetched:
-                config_fetched = True
+            if realtime and context.game_config is None and now() >= config_retry_at:
                 context = timed("get_game_config", lambda: _with_game_config(game, context))
+                if context.game_config is None:
+                    # Schedule from completion, not the initial attempt, so
+                    # even a slow failed request cannot trigger a tight loop.
+                    config_retry_at = now() + config_retry_delay
+                    config_retry_delay = min(config_retry_delay * 2, GAME_CONFIG_RETRY_MAX_SECONDS)
+                    if not config_unavailable_logged:
+                        log("Game configuration unavailable; continuing play and retrying with backoff.")
+                        config_unavailable_logged = True
+                elif config_unavailable_logged:
+                    log("Game configuration recovered; subsequent decisions have the rules and map.")
             if state.raw.get("legal_actions") is None:
                 # The server omits legal_actions when a move landed between
                 # its state and legal-actions reads; fetch them directly.

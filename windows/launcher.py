@@ -11,6 +11,8 @@ import re
 import sys
 import warnings
 
+from altru_redalert import __version__
+
 KEY_ENV = "ALTRUAGENT_OFFICIAL_AGENT_KEY"
 KEY_PATTERN = re.compile(r"eak_live_[0-9a-f]{64}\Z")
 MODES = {
@@ -110,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 
     interactive = args.mode is None and not args.no_pause
     try:
-        print("AltruAgent Red Alert Bot | Windows x64\n")
+        print(f"AltruAgent Red Alert Bot v{__version__} | Windows x64\n")
         configure_environment(application_directory())
         mode = args.mode or choose_mode()
         prepare_key()

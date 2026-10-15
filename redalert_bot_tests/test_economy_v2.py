@@ -58,6 +58,20 @@ def orders(v, policy=None, command=None):
 
 
 class ProductionBudgetTests(unittest.TestCase):
+    def test_late_public_configuration_restores_map_planning(self):
+        policy = Economy()
+        initial = view(with_map=False)
+        policy.propose(initial)
+        self.assertFalse(policy._map.resources)
+        configured = view(with_map=True)
+        policy.propose(configured)
+        self.assertTrue(policy._map.resources)
+        self.assertTrue(policy._map.clusters)
+        self.assertIsNotNone(policy._ore(configured))
+        cached_map = policy._map
+        policy.propose(view(with_map=True))
+        self.assertIs(policy._map, cached_map)
+
     def test_count_progress_and_ready_head_reserve_all_unpaid_items(self):
         v = view(production=[{"item": "e1", "queue": "Infantry", "count": 5, "progress": .5},
                              {"item": "2tnk", "queue": "Vehicle", "count": 2, "ready": True}],
@@ -77,6 +91,15 @@ class ProductionBudgetTests(unittest.TestCase):
         v = view(cash=1000, train=["e1", "2tnk"],
                  production=[{"queue": "Vehicle", "item": "2tnk", "count": 2, "progress": .5}])
         self.assertEqual(orders(v, command="train"), [])
+
+    def test_unaffordable_medium_tank_does_not_block_a_light_tank(self):
+        # Previously selection allowed cost + 200, but batching required
+        # cost + 250. The medium tank was selected then silently dropped.
+        v = view(cash=1075, train=["2tnk", "1tnk", "e1", "e3"])
+        result = orders(v, command="train")
+        self.assertIn({"cmd": "train", "item": "1tnk"}, result)
+        self.assertNotIn({"cmd": "train", "item": "2tnk"}, result)
+        self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
 
     def test_uncertain_train_blocks_additional_queue_orders(self):
         v = view(train=["e1"], pending=[{"cmd": "train", "item": "e1", "count": 8}])

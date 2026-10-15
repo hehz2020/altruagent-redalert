@@ -71,6 +71,7 @@ class Military:
         self.visited = {}
         self.sweep = []
         self.sweep_map = None
+        self.sweep_layout = None
         self.army_goal = None
         self.goal_since = 0.0
         self.desired = {}
@@ -167,18 +168,23 @@ class Military:
         return view.base or origin
 
     def _prepare_sweep(self, view):
-        if self.sweep_map == view.map_id and self.sweep:
+        layout = view.map_info.get("layout", {})
+        rows = layout.get("rows", []) if isinstance(layout, dict) else []
+        origin = layout.get("origin", view.bounds[:2] if view.bounds else []) if isinstance(layout, dict) else []
+        rows = rows if isinstance(rows, (list, tuple)) else []
+        origin = origin if isinstance(origin, (list, tuple)) else []
+        layout_signature = (view.bounds, tuple(origin), tuple(rows))
+        if (self.sweep_map == view.map_id and self.sweep
+                and self.sweep_layout == layout_signature):
             return
         self.sweep_map = view.map_id
+        self.sweep_layout = layout_signature
         if not view.bounds:
             return
         x, y, w, h = view.bounds
         candidates = [(x + w * fx, y + h * fy)
                       for fy in (0.15, 0.38, 0.62, 0.85)
                       for fx in (0.15, 0.38, 0.62, 0.85)]
-        layout = view.map_info.get("layout", {})
-        rows = layout.get("rows", []) if isinstance(layout, dict) else []
-        origin = layout.get("origin", [x, y]) if isinstance(layout, dict) else [x, y]
         reachable = None
         if rows and view.base is not None and isinstance(origin, (list, tuple)) and len(origin) == 2:
             passable = {(origin[0] + j, origin[1] + i)
@@ -377,7 +383,14 @@ class Military:
         # irrelevant remote power plant. Only enough closest defenders respond.
         target = min(threats, key=lambda e: min(distance(pos(e), pos(p)) for p in protected))
         local = [e for e in threats if distance(pos(e), pos(target)) < 13]
-        candidates = sorted(army, key=lambda a: distance(pos(a), pos(target)))
+        # Aircraft must not recall ground-only units that cannot help. Check
+        # weapon suitability independently of distance, so distant AA can still
+        # respond while the ground army retains its own objective.
+        candidates = sorted((a for a in army if any(
+            damage_rate(view, a, e) > 0 for e in local)),
+            key=lambda a: distance(pos(a), pos(target)))
+        if not candidates:
+            return [], set()
         defenders = []
         for a in candidates:
             defenders.append(a)
@@ -426,6 +439,43 @@ class Military:
         self.raid_ids.clear()
         return [], set()
 
+    def _siege_position(self, view, gun, enemies):
+        """A visible structure's safe firing position, independent of the screen.
+
+        Keeping every gun four cells behind tanks at a ten-cell standoff can
+        strand a twelve-cell gun forever. Approach a currently visible building
+        from the gun's side, and verify the resulting map cell is both in our
+        firing range and outside visible enemy firing ranges. This is a local
+        position check, not a prediction of an unseen enemy or a safe route.
+        """
+        visible_buildings = {_id(b) for b in view.enemy_buildings}
+        targets = [e for e in enemies if _id(e) in visible_buildings
+                   and damage_rate(view, gun, e) > 0]
+        for target in sorted(targets, key=lambda e: distance(pos(gun), pos(e))):
+            # Far-away sightings do not peel a gun off its screen. Normal
+            # formation movement brings it close enough for a local approach.
+            if distance(pos(gun), pos(target)) > weapon_range(view, gun, target) + 12:
+                continue
+            dx, dy = pos(gun)[0] - pos(target)[0], pos(gun)[1] - pos(target)[1]
+            norm = hypot(dx, dy)
+            if norm < 1:
+                continue
+            radius = weapon_range(view, gun, target) - .75
+            point = view.ground_point((round(pos(target)[0] + radius * dx / norm),
+                                       round(pos(target)[1] + radius * dy / norm)))
+            if point is None or damage_rate(view, gun, target,
+                    at_distance=distance(point, pos(target))) <= 0:
+                continue
+            # Use a conservative outer-range margin, not distance minus one:
+            # subtracting a margin can accidentally move an enemy artillery
+            # estimate inside its minimum range and label real counterfire safe.
+            if any(damage_rate(view, e, gun) > 0
+                   and distance(pos(e), point) <= weapon_range(view, e, gun) + 1.
+                   for e in enemies):
+                continue
+            return point
+        return None
+
     def _support(self, view, army, goal, enemies):
         artillery = [a for a in army if _kind(a) in ARTILLERY]
         if not artillery:
@@ -449,6 +499,11 @@ class Military:
         orders += firing
         for a in artillery:
             if _id(a) in engaged | withdrawing:
+                continue
+            firing_point = self._siege_position(view, a, enemies)
+            if firing_point is not None:
+                orders += self._orders(view, [a], "attack_move", firing_point,
+                                       f"gun-siege-{_id(a)}", 50)
                 continue
             dx, dy = goal[0] - center[0], goal[1] - center[1]
             norm = max(1., hypot(dx, dy))

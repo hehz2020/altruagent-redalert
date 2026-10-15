@@ -92,6 +92,7 @@ class Economy:
     def __init__(self):
         self._map = None
         self._map_id = None
+        self._map_layout = None
         self._deploy_attempts = {}
         self._mcv_targets = {}
         self._mcv_progress = {}
@@ -102,8 +103,13 @@ class Economy:
         self._harvester_retreat = {}
 
     def _refresh(self, v):
-        if self._map is None or self._map_id != v.map_id:
+        # Configuration may arrive after an initial transient MCP failure.
+        # Rebuild a map made without terrain once the public layout is known.
+        layout = v.map_info.get("layout")
+        if (self._map is None or self._map_id != v.map_id
+                or self._map_layout != layout or self._map.bounds != v.bounds):
             self._map, self._map_id = MacroMap(v), v.map_id
+            self._map_layout = layout
         if self._last_now is not None and v.now > self._last_now:
             dt = v.now - self._last_now
             if dt < 90:
@@ -458,6 +464,7 @@ class Economy:
         # cash; an empty vehicle queue should not lose all funds to ten rifles.
         budget += income_reserve + mcv_reserve
         vehicle_item, vehicle_priority, vehicle_cap = None, 63, 2
+        combat_vehicle_reserve = 250
         if not v.queue_busy("Vehicle") and v.remaining > 25:
             if emergency_harvester:
                 vehicle_item, vehicle_priority, vehicle_cap = "harv", 93, 1
@@ -488,11 +495,11 @@ class Economy:
                     else:
                         choices = ["3tnk", "2tnk", "1tnk", "ftrk", "apc", "jeep"]
                     vehicle_item = next((x for x in choices if v.available(x, "train") and _cost(v, x) > 0
-                                         and budget >= _cost(v, x) + 200), None)
+                                         and budget >= _cost(v, x) + combat_vehicle_reserve), None)
         vehicle_order = None
         if vehicle_item:
             n = self._batch(v, vehicle_item, budget, cap=vehicle_cap,
-                            reserve=0 if vehicle_item in {"harv", "mcv"} else 250,
+                            reserve=0 if vehicle_item in {"harv", "mcv"} else combat_vehicle_reserve,
                             horizon=max(25, min(45, self._cadence * 2)))
             if n:
                 vehicle_order = {"cmd": "train", "item": vehicle_item}

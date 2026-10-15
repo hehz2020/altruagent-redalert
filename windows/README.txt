@@ -2,6 +2,9 @@ AltruAgent Red Alert Bot — Windows 10/11 x64
 
 不需要安装 Python。
 
+更新到 v2.1：先结束当前对局，再关闭旧机器人窗口，解压并启动新程序。
+启动首行应显示 Bot v2.1。同一账号不要同时运行新旧程序。
+
 1. 解压整个 ZIP，然后双击 AltruAgentRedAlert.exe。
 2. 选择模式：1 = 测试对局，2 = 正式比赛，3 = 两者，4 = 只检查连接。
 3. 粘贴自己的 Official Agent Key。输入不显示，回车确认。

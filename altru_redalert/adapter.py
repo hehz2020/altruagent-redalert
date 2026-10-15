@@ -21,6 +21,7 @@ from typing import Any, Callable
 from altruagent import TERMINATE_MESSAGING, WAIT
 from altruagent.agent_loader import load_agent_factory
 
+from . import __version__
 from .core import Controller
 
 
@@ -190,7 +191,9 @@ class _ReplayLog:
             self.close()
 
     def state(self, raw: dict, config: Any, decision: Any) -> None:
-        entry = {"type": "state", "raw": _safe_state(raw), "decision": decision}
+        entry = {"type": "state", "policy_version": __version__,
+                 "config_available": isinstance(config, dict) and bool(config),
+                 "raw": _safe_state(raw), "decision": decision}
         if isinstance(config, dict) and not self.config_written:
             entry["config"] = _known(config, _CONFIG_FIELDS)
             self.config_written = True

@@ -1,4 +1,29 @@
-AltruAgent Red Alert Bot v2 — validation record
+AltruAgent Red Alert Bot v2.1 — validation record
+Date: 2026-10-15 UTC (2026-10-14 Pacific)
+
+Full local integration: 881 passed, 6 subtests passed (8.04 seconds).
+Command: python -m pytest tests redalert_bot_tests windows/tests -q
+41 upstream SDK deprecation warnings; no test failures.
+Local launcher controller/spawn/persistent-MCP self-test: passed (Linux, unfrozen).
+The release workflow separately runs the suite and actual EXE on Windows.
+
+Confirmed corrections, with focused regressions:
+- Missing initial game configuration is retried at 5/10/20/30-second intervals;
+  successful retrieval is retained and late public terrain refreshes both caches.
+- Vehicle selection and batching share one reserve, avoiding a no-vehicle cash gap.
+- Aircraft-only threats cannot recall ground-only defenders.
+- Artillery enters a visible building's safe firing annulus independently of the
+  tank screen; a two-observation regression checks movement followed by fire.
+- Startup and player logs identify v2.1; logs mark configuration availability.
+
+These are deterministic defect reproductions and regression checks, not match
+wins. No competitive win rate is established by this release. The user's red-side
+screenshot is incomplete and not matched to a current local player log; these
+defects must not be represented as a proven diagnosis of that specific match.
+Local exact-engine evaluation is a separate work item; do not infer a result
+from downloaded source or a successful build.
+
+Previous v2 validation record follows:
 Date: 2026-10-14
 
 Status: implementation and offline regression checks passed.

@@ -16,9 +16,16 @@ import json
 import pytest
 
 from altruagent import WAIT, DecisionContext, WithReasoning
+from altruagent.errors import PlatformError
 from altruagent.mcp_transport import MCPToolError
 from altruagent.models import GameState
-from altruagent.runner import REALTIME_RETRY_SECONDS, DecisionError, run_game
+from altruagent.runner import (
+    GAME_CONFIG_RETRY_FIRST_SECONDS,
+    GAME_CONFIG_RETRY_MAX_SECONDS,
+    REALTIME_RETRY_SECONDS,
+    DecisionError,
+    run_game,
+)
 from examples.llm import redalert
 from examples.llm.base import UnsupportedStructuredAction
 from examples.llm.providers import ProviderError
@@ -191,6 +198,85 @@ def test_game_config_errors_leave_it_unset():
     agent = Recorder(ORDERS)
     run_game(game, RED_ALERT, agent, sleep=lambda s: None)
     assert agent.contexts[0].game_config is None
+
+
+class ConfigRetryGame(RealtimeFakeGame):
+    """A real-time stream with independently controlled monotonic time."""
+
+    def __init__(self, observation_times, *config_results):
+        super().__init__()
+        self.monotonic = observation_times[0]
+        self.observation_times = {100 + i: t for i, t in enumerate(observation_times)}
+        self.config_results = list(config_results)
+        self.config_call_times = []
+        self.queue_state(*(ra_state(tick) for tick in self.observation_times), terminal_state())
+        self.queue_result(result_dict())
+
+    def _timestamp(self, state):
+        if not state.is_terminal:
+            self.monotonic = self.observation_times[state.state_version]
+        return state
+
+    def get_state(self):
+        return self._timestamp(super().get_state())
+
+    def wait_for_update(self, **kwargs):
+        return self._timestamp(super().wait_for_update(**kwargs))
+
+    def get_game_config(self, game_type):
+        self.config_calls.append(game_type)
+        self.config_call_times.append(self.monotonic)
+        return self._pop(self.config_results)
+
+
+@pytest.mark.parametrize("initial_response", [
+    _tool_error("RUNTIME_TEMPORARILY_UNAVAILABLE"),
+    PlatformError("Request failed with status 503.", status_code=503),
+    None,
+    {},
+    [],
+])
+def test_missing_game_config_recovers_on_a_later_read_without_replaying_actions(initial_response):
+    retry = GAME_CONFIG_RETRY_FIRST_SECONDS
+    game = ConfigRetryGame([0, retry - .01, retry, 50, 100], initial_response, CONFIG)
+    game.queue_play_action(accepted(("build", "pending", "pending")))
+    agent = Recorder(ORDERS, WAIT, WAIT, WAIT, WAIT)
+    logs = []
+    run_game(game, RED_ALERT, agent, sleep=lambda s: None, now=lambda: game.monotonic, log=logs.append)
+    assert game.config_call_times == [0, retry]
+    assert [c.game_config for c in agent.contexts[:2]] == [None, None]
+    assert all(c.game_config is CONFIG for c in agent.contexts[2:])
+    assert len(game.play_action_calls) == 1
+    assert len(logs) == 2
+    assert "recovered" in logs[-1]
+
+
+def test_game_config_unknown_tool_retries_with_bounded_frequency_during_dense_updates():
+    # Hundreds of state updates must not become hundreds of config requests.
+    # Attempts are at 0, 5, 15, 35, 65, 95: exponential backoff capped at 30 s.
+    times = [i / 10 for i in range(1001)]
+    unknown = _tool_error("UNKNOWN_TOOL", "Unknown tool: get_game_config")
+    game = ConfigRetryGame(times, *([unknown] * 6))
+    agent = Recorder(*([WAIT] * len(times)))
+    logs = []
+    run_game(game, RED_ALERT, agent, sleep=lambda s: None, now=lambda: game.monotonic, log=logs.append)
+    assert game.config_call_times == [0, 5, 15, 35, 65, 95]
+    intervals = [b - a for a, b in zip(game.config_call_times, game.config_call_times[1:])]
+    assert min(intervals) >= GAME_CONFIG_RETRY_FIRST_SECONDS
+    assert max(intervals) == GAME_CONFIG_RETRY_MAX_SECONDS
+    assert all(c.game_config is None for c in agent.contexts)
+    assert len(logs) == 1  # The unknown tool also cannot flood the console.
+
+
+def test_supplied_game_config_never_fetches_it_again():
+    from dataclasses import replace
+
+    game = ConfigRetryGame([0, 60, 120])
+    agent = Recorder(WAIT, WAIT, WAIT)
+    run_game(game, replace(RED_ALERT, game_config=CONFIG), agent,
+             sleep=lambda s: None, now=lambda: game.monotonic)
+    assert game.config_calls == []
+    assert all(c.game_config is CONFIG for c in agent.contexts)
 
 
 def test_turn_based_games_never_fetch_the_config():

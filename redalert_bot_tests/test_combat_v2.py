@@ -3,7 +3,7 @@ import unittest
 
 from altru_redalert.combat import Military
 from altru_redalert.core import validate_order
-from altru_redalert.model import View
+from altru_redalert.model import View, distance
 from altru_redalert.tactics import damage_rate, force_ratio, health, weapon_range
 from redalert_bot_tests.test_adversarial import actor, snapshot
 
@@ -72,6 +72,87 @@ class WeaponMatchupTests(unittest.TestCase):
 
 
 class RoleControlTests(unittest.TestCase):
+    def test_air_raid_does_not_recall_ground_only_army(self):
+        own = [actor(i, '2tnk', 50 + i % 3, 48 + i // 3) for i in range(1, 10)]
+        air = actor(100, 'yak', 18, 13)
+        config = {'rules': {'units': {'yak': {'queue': 'Aircraft', 'speed': 4.35,
+                  'weapon': {'weapon': 'ChainGun.Yak', 'range_cells': 5., 'damage': 4000}}}}}
+        view = View(snapshot(400, units=own, buildings=[actor(90, 'proc', 12, 13)],
+                             enemies=[air]), config)
+        military = Military()
+        orders, defenders = military._defense(view, own, [air])
+        self.assertEqual(defenders, set())
+        self.assertEqual(orders, [])
+        advances = [i.order for i in military.propose(view) if i.order['cmd'] == 'attack_move']
+        self.assertTrue(advances)
+        self.assertTrue(all(i['to'] != [air['x'], air['y']] for i in advances))
+
+    def test_air_raid_assigns_aa_without_dragging_ground_only_tanks(self):
+        own = [actor(i, '2tnk', 16, 13) for i in range(1, 10)]
+        own += [actor(20, 'ftrk', 23, 13), actor(21, 'e3', 23, 14)]
+        air = actor(100, 'yak', 18, 13)
+        config = {'rules': {'units': {'yak': {'queue': 'Aircraft', 'speed': 4.35,
+                  'weapon': {'weapon': 'ChainGun.Yak', 'range_cells': 5., 'damage': 4000}}}}}
+        view = View(snapshot(400, units=own, buildings=[actor(90, 'proc', 12, 13)],
+                             enemies=[air]), config)
+        orders, defenders = Military()._defense(view, own, [air])
+        self.assertTrue(defenders)
+        self.assertTrue(defenders <= {20, 21})
+        self.assertTrue(all(validate_order(i.order, view) is not None for i in orders))
+
+    def test_siege_gun_leaves_out_of_range_fixed_point_and_fires(self):
+        tanks = [actor(i, '2tnk', 80, 48 + i) for i in range(1, 5)]
+        gun = actor(10, 'arty', 76, 50)
+        towers = [actor(100 + i, 'tsla', 90 + i % 2, 48 + i // 2) for i in range(8)]
+        military = Military()
+        view = View(snapshot(400, units=tanks + [gun], enemy_buildings=towers))
+        first = military.propose(view)
+        gun_moves = [i.order for i in first if 10 in i.order.get('units', [])
+                     and i.order['cmd'] in {'move', 'attack_move'}]
+        self.assertEqual(len(gun_moves), 1)
+        point = gun_moves[0]['to']
+        self.assertNotEqual(point, [gun['x'], gun['y']])
+        self.assertTrue(any(damage_rate(view, gun, t, at_distance=distance(point, t)) > 0
+                            for t in towers))
+        self.assertTrue(all(damage_rate(view, t, gun, at_distance=distance(point, t)) == 0
+                            for t in towers))
+        military.mark_sent([i.order for i in first], 400)
+        gun.update(x=point[0], y=point[1])
+        second = military.propose(View(snapshot(404, units=tanks + [gun], enemy_buildings=towers)))
+        self.assertTrue(any(i.order['cmd'] == 'attack' and 10 in i.order['units'] for i in second))
+
+    def test_siege_position_rejects_visible_counterfire(self):
+        gun = actor(10, 'v2rl', 70, 50)
+        tower = actor(100, 'tsla', 90, 50)
+        defender = actor(101, 'arty', 85, 50)
+        view = View(snapshot(400, units=[gun], enemies=[defender], enemy_buildings=[tower]))
+        self.assertIsNone(Military()._siege_position(view, gun, [tower, defender]))
+
+    def test_late_map_layout_rebuilds_sweep_without_losing_contacts(self):
+        raw = snapshot(300, units=[actor(1, '1tnk', 12, 12)])
+        military = Military()
+        military._prepare_sweep(View(raw))
+        before = list(military.sweep)
+        military.memories[99] = ((50, 50), 290)
+        # Only a small ground island is reachable once the actual map arrives.
+        rows = ['.' * 20 + '~' * 76 for _ in range(20)] + ['~' * 96 for _ in range(76)]
+        config = {'rules': {'maps': {'scenario-map': {'layout': {
+                  'origin': [4, 4], 'rows': rows}}}}}
+        military._prepare_sweep(View(raw, config))
+        self.assertNotEqual(before, military.sweep)
+        self.assertTrue(all(4 <= x < 24 and 4 <= y < 24 for x, y in military.sweep))
+        self.assertEqual(military.memories[99], ((50, 50), 290))
+
+    def test_missing_or_malformed_layout_uses_bounded_sweep(self):
+        raw = snapshot(300, units=[actor(1, '1tnk', 12, 12)])
+        for layout in ({'origin': None, 'rows': None}, {'origin': 'bad', 'rows': 'bad'}):
+            with self.subTest(layout=layout):
+                military = Military()
+                view = View(raw, {'rules': {'maps': {'scenario-map': {'layout': layout}}}})
+                military._prepare_sweep(view)
+                self.assertTrue(military.sweep)
+                self.assertTrue(all(view.clamp(point) == list(point) for point in military.sweep))
+
     def test_main_army_stands_off_known_tower_wall_before_entering_range(self):
         own = [actor(i, '1tnk', 30, 30) for i in range(1, 7)]
         towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
