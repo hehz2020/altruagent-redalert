@@ -9,6 +9,7 @@ from copy import deepcopy
 import pytest
 
 from altru_redalert.economy import Economy
+from altru_redalert.core import validate_order
 from altru_redalert.model import View
 from redalert_bot_tests.test_economy_v2 import actor, view
 
@@ -47,29 +48,40 @@ def development_view(*, cash=900, seconds=200, harvesters=1, refineries=1,
 
 
 def purchases(v, policy=None):
-    return [intent.order for intent in (policy or Economy()).propose(v)
-            if intent.order["cmd"] in {"build", "train"}]
+    result = [intent.order for intent in (policy or Economy()).propose(v)
+              if intent.order["cmd"] in {"build", "train"}]
+    # Check invariants before individual strategy expectations can fail. Exact
+    # unpaid queue costs are independently asserted in the reservation cases.
+    assert purchase_cost(v, result) <= v.funds
+    queues = [v.queue(order["item"]) for order in result]
+    assert len(queues) == len(set(queues))
+    for order, queue in zip(result, queues):
+        assert validate_order(order, v) == order
+        assert not v.queue_busy(queue)
+    return result
 
 
 def purchase_cost(v, orders):
     return sum(v.cost(order["item"]) * order.get("count", 1) for order in orders)
 
 
-def test_single_harvester_keeps_income_packets_for_the_second_harvester():
+def test_single_harvester_keeps_income_packets_for_the_second_refinery():
     policy = Economy()
-    # Legal cheap units must not consume each packet before 1100 is reached.
-    for seconds, cash in ((200, 600), (205, 900), (210, 1099)):
+    # The second refinery includes a harvester without occupying Vehicle.
+    # Legal cheap units must not consume its protected income packets.
+    for seconds, cash in ((200, 600), (205, 1100), (210, 1399)):
         assert purchases(development_view(seconds=seconds, cash=cash), policy) == []
-    v = development_view(seconds=215, cash=1100)
-    assert purchases(v, policy) == [{"cmd": "train", "item": "harv"}]
+    v = development_view(seconds=215, cash=1400)
+    assert purchases(v, policy) == [{"cmd": "build", "item": "proc"}]
 
 
 def test_factory_savings_allow_prerequisite_power_then_the_factory():
     policy = Economy()
-    low_power = development_view(cash=300, factory=False, vehicle=False, power_surplus=0)
+    low_power = development_view(cash=300, refineries=2, factory=False,
+                                 vehicle=False, power_surplus=0)
     assert purchases(low_power, policy) == [{"cmd": "build", "item": "powr"}]
     # A fresh observation confirms the extra power and enough accumulated cash.
-    powered = development_view(seconds=220, cash=2000, factory=False,
+    powered = development_view(seconds=220, cash=2000, refineries=2, factory=False,
                                vehicle=False, power_surplus=100)
     powered.buildings.append(actor(12, "powr", 9, 14))
     assert purchases(powered, policy) == [{"cmd": "build", "item": "weap"}]
@@ -84,17 +96,17 @@ def test_two_harvesters_can_fund_the_second_refinery_at_its_exact_price():
 
 def test_two_refineries_can_fund_the_repair_shop_without_surplus_padding():
     policy = Economy()
-    assert purchases(development_view(cash=1199, harvesters=2, refineries=2), policy) == []
-    ready = development_view(seconds=205, cash=1200, harvesters=2, refineries=2)
+    assert purchases(development_view(cash=1199, harvesters=3, refineries=2), policy) == []
+    ready = development_view(seconds=205, cash=1200, harvesters=3, refineries=2)
     assert purchases(ready, policy) == [{"cmd": "build", "item": "fix"}]
 
 
 def test_first_heavy_tank_uses_the_public_1150_cost_boundary():
     policy = Economy()
-    poor = development_view(cash=1149, harvesters=2, refineries=2, repair_shop=True)
+    poor = development_view(cash=1149, harvesters=3, refineries=2, repair_shop=True)
     assert poor.cost("3tnk") == 1150
     assert purchases(poor, policy) == []
-    ready = development_view(seconds=205, cash=1150, harvesters=2,
+    ready = development_view(seconds=205, cash=1150, harvesters=3,
                              refineries=2, repair_shop=True)
     result = purchases(ready, policy)
     assert result == [{"cmd": "train", "item": "3tnk"}]
@@ -151,23 +163,36 @@ def test_unconfirmed_development_orders_are_reserved_and_never_duplicated():
     both_pending = development_view(seconds=205, cash=2500,
                                     pending=[pending_harvester, *result])
     assert purchases(both_pending, policy) == []
-    # A later confirmed view advances to the next development step.
+    # A later confirmed view advances to the third miner, not directly to
+    # technology. Its unresolved order can run in parallel with the shop.
     confirmed = development_view(seconds=230, cash=1200, harvesters=2, refineries=2)
-    assert purchases(confirmed, policy) == [{"cmd": "build", "item": "fix"}]
+    third = purchases(confirmed, policy)
+    assert third == [{"cmd": "train", "item": "harv"}]
+    parallel = development_view(seconds=235, cash=2300, harvesters=2, refineries=2, pending=third)
+    shop = purchases(parallel, policy)
+    assert 1100 + purchase_cost(parallel, shop) <= parallel.funds
+    assert shop == [{"cmd": "build", "item": "fix"}]
+    both_pending = development_view(seconds=240, cash=2300, harvesters=2,
+                                    refineries=2, pending=[*third, *shop])
+    assert purchases(both_pending, policy) == []
 
 
 @pytest.mark.parametrize("cash", [2874, 2875, 2975, 3475])
 def test_heavy_tank_queue_tails_and_pending_infantry_cannot_be_spent_twice(cash):
     production = [{"queue": "Vehicle", "item": "3tnk", "count": 3, "progress": .5}]
-    v = development_view(cash=cash, harvesters=2, refineries=2,
+    v = development_view(cash=cash, harvesters=4, refineries=2,
                          repair_shop=True, production=production)
+    # Six total core tanks complete development saving. The remaining 600
+    # must really be available to infantry after reserving the queue tails.
+    v.units.extend(actor(70 + i, "3tnk") for i in range(3))
     result = purchases(v)
     unpaid_tanks = 1150 * 2.5
     assert purchase_cost(v, result) <= max(0, cash - unpaid_tanks)
     assert all(v.queue(order["item"]) != "Vehicle" for order in result)
     if cash == 3475:
         assert result == [{"cmd": "train", "item": "e3", "count": 2}]
-        pending = development_view(seconds=205, cash=cash, harvesters=2,
+        pending = development_view(seconds=205, cash=cash, harvesters=4,
                                    refineries=2, repair_shop=True,
                                    production=production, pending=result)
+        pending.units.extend(actor(70 + i, "3tnk") for i in range(3))
         assert purchases(pending) == []

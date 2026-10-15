@@ -105,33 +105,50 @@ class Economy:
         self._saving_best_budget = 0.0
         self._saving_progress_at = 0.0
         self._saving_resume_at = 0.0
+        self._tank_core_established = False
 
     def _development_goal(self, v, budget, critical_danger, vehicles, owned_combat):
-        """Fund the next income/tech step after a small defensive opening.
+        """Two refineries, fast tank technology, then a concentrated armor core.
 
         Only observed units and available production are used. Existing queues
         keep running. If funds make no progress for 45 seconds, spend normally
         for 20 seconds instead of indefinitely withholding all reinforcements.
         """
+        # This is an observed opening milestone, not queued or predicted units.
+        # Once achieved, losses must not turn every recovery budget into tanks.
+        if sum(v.count(x) for x in ("3tnk", "2tnk", "1tnk")) >= 3:
+            self._tank_core_established = True
         item = None
-        if not critical_danger and v.has("proc") and v.remaining > 240:
-            if v.total("weap") == 0 and v.total("e1") >= 3 and v.available("weap", "build"):
+        if not critical_danger and v.has("proc") and v.count("harv") > 0 and v.remaining > 240:
+            incoming = max(0, v.total("proc") - v.count("proc"))
+            # The second refinery supplies a second miner without consuming
+            # the future vehicle queue. Do not require a disposable light car
+            # and an infantry wave before investing the opening income.
+            if v.total("proc") < 2 and v.available("proc", "build"):
+                item = "proc"
+            elif v.total("weap") == 0 and v.available("weap", "build"):
                 item = "weap"
-            elif v.has("weap") and vehicles >= 1 and owned_combat >= 4:
-                incoming = max(0, v.total("proc") - v.count("proc"))
-                if v.total("harv") + incoming < 2 and v.available("harv", "train"):
+            elif v.has("weap"):
+                if v.total("harv") + incoming < 3 and v.available("harv", "train"):
                     item = "harv"
-                elif v.total("proc") < 2 and v.total("harv") >= 2 and v.available("proc", "build"):
-                    item = "proc"
-                elif (v.total("fix") == 0 and v.total("harv") >= 2 and v.now >= 150
+                elif (v.total("fix") == 0 and v.total("harv") >= 2
                       and v.available("fix", "build") and _power(v, "fix") is not None):
                     item = "fix"
                 elif v.has("fix") and v.total("harv") >= 2:
-                    # A technology building is wasted if cheap cars consume
-                    # every income packet before the first real tank is funded.
-                    # Maintain a small three-tank core, then resume normal mix.
                     core = sum(v.total(x) for x in ("3tnk", "2tnk", "1tnk"))
-                    if core < 3:
+                    # Three tanks establish a real fighting group. Its next
+                    # reinforcement is an income unit, then another three
+                    # tanks, instead of endlessly recycling cheap infantry.
+                    if core >= 3 and v.total("harv") < 4 and v.available("harv", "train"):
+                        item = "harv"
+                    elif (self._tank_core_established and v.total("e1") < 3
+                          and v.available("e1", "train")):
+                        item = "e1"
+                    elif (self._tank_core_established
+                          and sum(v.total(x) for x in ("ftrk", "apc", "jeep")) < 1):
+                        item = next((x for x in ("ftrk", "apc", "jeep")
+                                     if v.available(x, "train") and _cost(v, x) > 0), None)
+                    if item is None and core < 6:
                         item = next((x for x in ("3tnk", "2tnk", "1tnk")
                                      if v.available(x, "train") and _cost(v, x) > 0), None)
         if item is None:
@@ -541,6 +558,14 @@ class Economy:
                 if budget >= _cost(v, development):
                     vehicle_item, vehicle_priority, vehicle_cap = development, 84, 1
                     combat_vehicle_reserve = 0
+            elif development == "e1":
+                # The opening armor already existed. Rebuild its three-rifle
+                # screen before filling another vehicle queue with a tank.
+                pass
+            elif v.total("fix") > v.count("fix") and not critical_danger:
+                # The first tank is only a few seconds away. A flak truck
+                # here would consume both its cash and the vehicle queue.
+                pass
             else:
                 goal = min(8, max(1, 2 * v.count("proc"))) if v.count("proc") >= 2 else 1
                 # A refinery already in production supplies a free harvester.
@@ -583,16 +608,21 @@ class Economy:
             budget = max(0, budget - income_reserve)
         if development_is_vehicle and not (vehicle_order and vehicle_item == development):
             budget = max(0, budget - _cost(v, development))
+        if v.total("fix") > v.count("fix") and not critical_danger:
+            budget = max(0, budget - 1150)
 
         if not v.queue_busy("Infantry") and v.remaining > 12:
             rifles, rockets = v.total("e1"), v.total("e3")
-            rifle_goal = max(5 if not far else 3, min(60, 12 + vehicles * 3)) if v.has("weap") else (5 if home_danger else 3)
-            rocket_goal = max(2 if v.has("weap") else 0, rifles // 4)
+            core = sum(v.total(x) for x in ("3tnk", "2tnk", "1tnk"))
+            rifle_goal = min(24, 6 + core * 2) if v.has("weap") else (5 if home_danger else 3)
+            rocket_goal = max(2 if v.has("weap") else 0, rifles // 5)
             if armor >= 2 or air:
                 rocket_goal = max(rocket_goal, min(12, armor + 2 * air + 1))
             if home_danger:
                 rifle_goal = max(rifle_goal, 10)
-            if (rockets < rocket_goal and v.available("e3", "train")
+            if development == "e1":
+                item, deficit = "e1", 3 - rifles
+            elif (rockets < rocket_goal and v.available("e3", "train")
                     and (rifles >= 4 or air or armor >= 2)):
                 item, deficit = "e3", rocket_goal - rockets
             elif rifles < rifle_goal:

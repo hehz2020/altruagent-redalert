@@ -1,3 +1,52 @@
+AltruAgent Red Alert Bot v2.3 — validation record
+Date: 2026-10-15 UTC (2026-10-14 Pacific)
+
+Full local integration: 943 passed, 13 subtests passed (9.50 seconds).
+Command: python -m pytest tests redalert_bot_tests windows/tests -q
+41 existing upstream SDK deprecation warnings; no failures.
+Local launcher controller/spawn/persistent-MCP self-test: passed (Linux, unfrozen).
+The release workflow separately tests the actual frozen Windows executable;
+its machine-readable result is packaged as self-test.json.
+
+Selected policy: tank_cohesive_screen_v3, frozen as final_v23.
+Policy SHA-256 (sorted Python filenames followed by their bytes):
+a7934b626ad3aaa93277f789404883afb57df04e8831960806806a07d482033a
+
+The seven development candidates were compared on the same twelve previously
+seen conditions. The selected policy scored 10 wins / 2 losses: seven engine
+wins, three local time-limit score wins, and two engine losses. v2.2 scored
+5 wins / 7 losses. In the separate, previously declared sixteen-condition
+paired comparison, v2.3 won 11 and lost 5; v2.2 won 9 and lost 7. New-version
+wins comprise eight engine wins and three local time-limit score wins;
+reference wins comprise seven engine wins and two local score wins. Five
+paired outcomes improved, three regressed and eight stayed the same. These
+results are not pooled with development. See BENCHMARK.md and its JSON for
+every outcome. These are local instrumented-engine results, not platform
+tournament results or proof of strongest-bot status.
+
+New regressions cover protected tank timing, support-unit recovery after an
+observed three-tank milestone, pending/queued spending, legal affordability,
+reachable short movement goals, late map refresh, bounded route caches, and
+whole-main-squad cancellation of pursuit before an unfavorable assault.
+Existing ownership, visibility, command limits and launcher checks remain.
+
+Offline CPU/cache check on three actual recorded snapshots (own actors include
+buildings): 50 own / 25 visible enemy, 100 / 4, and 119 / 10. Across thirty warm
+decisions per snapshot, wall-clock p95 was 66.15, 74.10 and 93.27 ms; maximums
+were 68.29, 75.88 and 97.51 ms. Five cold constructor+first-decision measurements
+per snapshot had maximums 315.19, 325.15 and 340.58 ms. Each separate route probe
+built one graph and one reverse field initially, with zero rebuilds over the
+next thirty fixed-geometry 5-Hz frames. Environment: Linux, eight-CPU quota,
+six concurrent local engine processes. This excludes network, JSON parsing,
+imports and action execution; it does not measure live platform latency.
+
+Release module SHA-256:
+combat.py: 6a15d7334bf5482605271be3f2995994c1bf42a065ceead24d5d8c238e7d9e4f
+economy.py: eceaca11f52d6aa4087e83579e571238e08e1e815d557b7a2fec5d19d18c6165
+ground_routes.py: ab15f586e92b1f2ff457d5468c034c09c7298c9257198f05e04834229fb626f7
+
+Historical v2.2 validation follows; claims below describe that release:
+
 AltruAgent Red Alert Bot v2.2 — validation record
 Date: 2026-10-15 UTC (2026-10-14 Pacific)
 
@@ -29,9 +78,6 @@ Release combat.py SHA-256:
 Release economy.py SHA-256:
 08f09a1be08a1d44f97af0c9d963b52ce6038f8a008cbfb4f2ff354036e44e86
 
-The user's red-side screenshot is incomplete and not paired to a current
-player log. Reproduced defects are not proof of that screenshot's exact cause.
-
 Historical v2.1 validation record follows (claims below describe that release):
 
 AltruAgent Red Alert Bot v2.1 — validation record
@@ -53,10 +99,7 @@ Confirmed corrections, with focused regressions:
 - Startup and player logs identify v2.1; logs mark configuration availability.
 
 These are deterministic defect reproductions and regression checks, not match
-wins. No competitive win rate is established by this release. The user's red-side
-screenshot is incomplete and not matched to a current local player log; these
-defects must not be represented as a proven diagnosis of that specific match.
-Local exact-engine evaluation is a separate work item; do not infer a result
+wins. No competitive win rate is established by this release. Local exact-engine evaluation is a separate work item; do not infer a result
 from downloaded source or a successful build.
 
 Previous v2 validation record follows:

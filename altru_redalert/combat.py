@@ -9,6 +9,7 @@ from math import hypot, sqrt
 from statistics import median
 
 from .model import Intent, distance, living, pos
+from .ground_routes import GroundRoutes
 from .tactics import (ARTILLERY, damage_rate, force_ratio, health, speed,
                      target_score, weapon_range, weapons)
 
@@ -24,6 +25,11 @@ NONCOMBAT = {
 }
 GROUND_DEFENSE = {"pbox", "hbox", "gun", "ftur", "tsla"}
 AIR = {"mig", "yak", "heli", "hind", "mh60", "u2", "badr", "badr.bomber"}
+# These public engine actors inherit AttackTurreted / AttackFollow: their
+# opportunity-fire tick continues while a plain Move controls their chassis.
+MOBILE_FIRE = {"1tnk", "2tnk", "3tnk", "4tnk", "jeep", "ftrk", "stnk"}
+OPENING_ARMOR_TARGET = 3
+OPENING_ARMOR_DEADLINE = 360
 
 
 def _kind(actor):
@@ -81,6 +87,10 @@ class Military:
         self.raid_until = 0.0
         self.commit_until = 0.0
         self.last_ratio = None
+        self.march_goal = None
+        self.march_destination = None
+        self.march_updated = 0.
+        self.ground_routes = None
 
     def _combat(self, view, actor):
         kind = _kind(actor)
@@ -130,7 +140,8 @@ class Military:
             for uid in order.get("units", []):
                 self.desired[uid] = (signature, now)
 
-    def _orders(self, view, actors, cmd, point, role, priority=40):
+    def _orders(self, view, actors, cmd, point, role, priority=40, *, arrival=2.5,
+                interrupt=False):
         target = view.ground_point(point) if point is not None else None
         if target is None:
             return []
@@ -141,13 +152,16 @@ class Military:
             if uid is None or not living(actor):
                 continue
             old = self.desired.get(uid)
-            at_goal = pos(actor) is not None and distance(pos(actor), target) < 2.5
+            at_goal = pos(actor) is not None and distance(pos(actor), target) < arrival
             # Busy units execute a stable order. Refresh only after a generous
             # timeout or a changed tactical goal; idle units retry after 3 s.
             due = (old is None or old[0] != signature
                    or view.now - old[1] >= 18
                    or (actor.get("idle") and view.now - old[1] >= 3))
-            if due and (not at_goal or cmd != "move"):
+            # A unit already at a disengagement point can still be executing
+            # an old direct attack. A same-cell Move cancels that pursuit.
+            replacing = interrupt and (old is None or old[0] != signature)
+            if due and (not at_goal or cmd != "move" or replacing):
                 selected.append(uid)
         return [Intent({"cmd": cmd, "units": selected[i:i + 50], "to": target},
                        priority=priority, cooldown=2.5,
@@ -511,6 +525,155 @@ class Military:
             orders += self._orders(view, [a], "attack_move", rear, f"gun-support-{_id(a)}", 50)
         return orders, {_id(a) for a in artillery}
 
+    def _body_center(self, army, goal):
+        """Use a real nearby group, not the midpoint of front and reinforcements.
+
+        A sufficient infantry body sets a mixed army's marching pace. Otherwise
+        tanks use their own largest local group. Newly produced stragglers do
+        not pull an established fighting group back across the entire map.
+        """
+        infantry = [a for a in army if _kind(a) in {"e1", "e2", "e3", "e4", "shok", "e7"}]
+        pool = infantry if len(infantry) >= 4 else [a for a in army if _kind(a) not in ARTILLERY]
+        if not pool:
+            pool = army
+        seed = max(pool, key=lambda a: (sum(distance(pos(a), pos(b)) <= 8 for b in pool),
+                                        -distance(pos(a), goal), -_id(a)))
+        return _center([a for a in pool if distance(pos(a), pos(seed)) <= 8])
+
+    def _navigation(self, view):
+        if self.ground_routes is None or not self.ground_routes.matches(view):
+            self.ground_routes = GroundRoutes(view)
+            self.march_goal = None
+        return self.ground_routes
+
+    def _body_origin(self, army, goal):
+        """Anchor terrain queries at an actual actor, not a median over water."""
+        center = self._body_center(army, goal)
+        body = [a for a in army if _kind(a) not in ARTILLERY] or army
+        return pos(min(body, key=lambda a: (distance(pos(a), center), _id(a))))
+
+    def _march_point(self, view, army, goal, step=6.):
+        origin = self._body_origin(army, goal)
+        routes = self._navigation(view)
+        if routes.available:
+            # A failed route must never turn back into a geometric waypoint
+            # on the opposite bank. Waiting at the known origin is bounded.
+            return routes.waypoint(origin, goal, distance_cells=step) or list(origin)
+        # Before public layout arrives retain usable bounded movement. Once
+        # layout is available every new bound uses its connected ground graph.
+        dx, dy = goal[0] - origin[0], goal[1] - origin[1]
+        norm = max(1., hypot(dx, dy))
+        scale = min(step, norm) / norm
+        return view.ground_point((round(origin[0] + scale * dx),
+                                  round(origin[1] + scale * dy)))
+
+    def _cohesive_advance(self, view, army, movable, goal):
+        """Advance now, in short bounds, instead of racing to the far base.
+
+        No extra production or army-value gate is introduced. A fast truck
+        reaches the same nearby bound as its infantry, then waits while the
+        slower body catches up. Attack-move is retained for ordinary fighting.
+        """
+        self._navigation(view)
+        center = self._body_center(army, goal)
+        if (self.march_goal is None or self.march_destination is None
+                or distance(goal, self.march_destination) > 6
+                or distance(center, self.march_goal) < 2.5
+                or view.now - self.march_updated >= 4):
+            self.march_goal = self._march_point(view, army, goal)
+            self.march_destination = tuple(goal)
+            self.march_updated = view.now
+        return self._orders(view, movable, "attack_move", self.march_goal, "pressure", 40)
+
+    def _screen_skirmish(self, view, army, enemies, goal):
+        """Recover exposed turreted vehicles and kite only with a range edge.
+
+        This is positioning, not a prediction of hidden reload state. A Move
+        can retain engine opportunity fire for these known turreted actors;
+        infantry is deliberately excluded because its frontal attack behaves
+        differently. Successful visible raids are not interrupted by an empty
+        field or harmless economic target.
+        """
+        if not army:
+            return [], set()
+        center = self._body_center(army, goal)
+        dx, dy = goal[0] - center[0], goal[1] - center[1]
+        norm = max(1., hypot(dx, dy))
+        direction = (dx / norm, dy / norm)
+        returners, kites = [], []
+        for a in army:
+            if _kind(a) not in MOBILE_FIRE:
+                continue
+            attackers = [e for e in enemies if damage_rate(view, e, a) > 0
+                         and distance(pos(a), pos(e)) <= weapon_range(view, e, a) + 3]
+            if not attackers:
+                continue
+            lead = ((pos(a)[0] - center[0]) * direction[0]
+                    + (pos(a)[1] - center[1]) * direction[1])
+            screen = [b for b in army if b is not a and _kind(b) not in ARTILLERY
+                      and distance(pos(a), pos(b)) <= 7]
+            if len(army) >= 5 and lead > 7 and len(screen) < 3:
+                returners.append(a)
+                continue
+            # Only outranging, faster vehicles can deliberately kite. A jeep
+            # cannot outrange riflemen; a flak truck can (6 versus 5 cells).
+            close = [e for e in attackers
+                     if distance(pos(a), pos(e)) <= weapon_range(view, e, a) + .5
+                     and weapon_range(view, a, e) >= weapon_range(view, e, a) + .8
+                     and speed(view, a) >= speed(view, e) * 1.15]
+            if not close:
+                continue
+            threat = min(close, key=lambda e: distance(pos(a), pos(e)))
+            ax, ay = pos(a)[0] - pos(threat)[0], pos(a)[1] - pos(threat)[1]
+            length = max(1., hypot(ax, ay))
+            desired_range = weapon_range(view, a, threat) - .25
+            point = view.ground_point((round(pos(threat)[0] + desired_range * ax / length),
+                                       round(pos(threat)[1] + desired_range * ay / length)))
+            if point is None or distance(point, pos(a)) < 1:
+                continue
+            routes = self._navigation(view)
+            if routes.available and not routes.reachable(pos(a), point):
+                continue
+            # Never kite toward a second currently visible threat. The public
+            # terrain projection can bend the requested point around water.
+            if any(distance(point, pos(e)) + .25 < distance(pos(a), pos(e)) for e in attackers):
+                continue
+            if distance(point, center) > max(10., distance(pos(a), center) + 1):
+                continue
+            kites.append((a, point))
+        rally = self._march_point(view, army, goal, step=2.)
+        routes = self._navigation(view)
+        returners = [a for a in returners if not routes.available
+                     or routes.reachable(pos(a), rally)]
+        orders = self._orders(view, returners, "move", rally,
+                              "screen-return", 91)
+        reserved = {_id(a) for a in returners}
+        # Bound the command budget; other vehicles keep their valid fire orders.
+        for a, point in sorted(kites, key=lambda pair: (_hp(pair[0]), _id(pair[0])))[:4]:
+            orders += self._orders(view, [a], "move", point, f"kite-{_id(a)}", 90, arrival=.75)
+            reserved.add(_id(a))
+        return orders, reserved
+
+    def _assault_standoff(self, view, army, goal, enemies):
+        """Decide the old projected-risk gate before assigning direct attacks."""
+        resistance = [e for e in enemies if weapons(view, e) and distance(pos(e), goal) < 12]
+        visible_ids = {_id(e) for e in enemies}
+        resistance += [e for uid, (e, seen, building) in self.contacts.items()
+                       if uid not in visible_ids and building and weapons(view, e)
+                       and view.now - seen < 90 and distance(pos(e), goal) < 12]
+        if not resistance or force_ratio(view, army, resistance, horizon=30, projected=True) >= 1.1:
+            return None
+        center = self._body_center(army, goal)
+        dx, dy = center[0] - goal[0], center[1] - goal[1]
+        norm = max(1., hypot(dx, dy))
+        radius = 10 if any(_kind(a) in ARTILLERY for a in army) else 15
+        point = (round(goal[0] + radius * dx / norm), round(goal[1] + radius * dy / norm))
+        routes = self._navigation(view)
+        origin = self._body_origin(army, goal)
+        if routes.available:
+            return routes.waypoint(origin, point, distance_cells=10000) or list(origin)
+        return view.ground_point(point)
+
     def propose(self, view):
         army = [u for u in view.units if self._combat(view, u)]
         if not army:
@@ -573,12 +736,33 @@ class Military:
         enough_force = ((total >= threshold and len(main) >= 6)
                         or (total >= 1700 and len(main) >= 3)
                         or (view.now > 360 and len(main) >= 3))
+        # Preserve candidate A's opening: combine economic tank timing with
+        # cohesion, without sending its first tank out alone.
+        if view.now < OPENING_ARMOR_DEADLINE and view.has("weap") and view.count("harv") >= 2:
+            armor = sum(_kind(a) in {"1tnk", "2tnk", "3tnk", "4tnk"} for a in main)
+            enough_force = enough_force and armor >= OPENING_ARMOR_TARGET
         ready = enough_force or view.now < self.commit_until
-        fire, engaged = self._local_fire(view, [a for a in main if _kind(a) not in ARTILLERY], enemies)
+        # This must precede all main-squad targeting. Appending a move after
+        # focus fire left engaged tanks chasing a tower while only infantry
+        # obeyed the standoff. Defense/raid orders above belong to other units.
+        standoff = self._assault_standoff(view, main, goal, enemies) if ready else None
+        if standoff is not None:
+            self._set_mode("standoff", view.now)
+            if enough_force:
+                self.commit_until = view.now + 20
+            line = [a for a in main if _kind(a) not in ARTILLERY]
+            orders += self._orders(view, line, "move", standoff, "squad-standoff", 94,
+                                   arrival=.75, interrupt=True)
+            guns, _ = self._support(view, main, goal, enemies)
+            return orders + guns
+        skirmish, maneuvering = self._screen_skirmish(view, main, enemies, goal)
+        orders += skirmish
+        fire, engaged = self._local_fire(view, [a for a in main if _kind(a) not in ARTILLERY
+                                               and _id(a) not in maneuvering], enemies)
         orders += fire
         guns, gun_ids = self._support(view, main, goal, enemies)
         orders += guns
-        movable = [a for a in main if _id(a) not in engaged | gun_ids]
+        movable = [a for a in main if _id(a) not in engaged | gun_ids | maneuvering]
         if not ready:
             self._set_mode("regroup", view.now)
             origin = view.base or center
@@ -595,19 +779,6 @@ class Military:
         # renew it by remaining in pressure or briefly leaving/re-entering it.
         if enough_force:
             self.commit_until = view.now + 20
-        # Previously seen static defenses survive fog in the risk model only.
-        # We never target their IDs or update their hidden health/position.
-        resistance = [e for e in enemies if weapons(view, e) and distance(pos(e), goal) < 12]
-        visible_ids = {_id(e) for e in enemies}
-        resistance += [e for uid, (e, seen, building) in self.contacts.items()
-                       if uid not in visible_ids and building and weapons(view, e)
-                       and view.now - seen < 90 and distance(pos(e), goal) < 12]
-        siege = any(_kind(a) in ARTILLERY for a in main)
-        if resistance and force_ratio(view, main, resistance, horizon=30, projected=True) < 1.1:
-            dx, dy = center[0] - goal[0], center[1] - goal[1]
-            norm = max(1., hypot(dx, dy))
-            standoff = 10 if siege else 15
-            goal = (goal[0] + standoff * dx / norm, goal[1] + standoff * dy / norm)
         if self.army_goal is None or distance(self.army_goal, goal) > 6 or view.now - self.goal_since > 20:
             self.army_goal, self.goal_since = goal, view.now
-        return orders + self._orders(view, movable, "attack_move", self.army_goal, "pressure", 40)
+        return orders + self._cohesive_advance(view, main, movable, self.army_goal)

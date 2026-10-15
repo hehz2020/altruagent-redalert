@@ -264,8 +264,11 @@ class TimelineTests(unittest.TestCase):
                     self.assertGreater(sim.counts("e1"), 0)
                     self.assertGreater(sum(sim.counts(x) for x in ("1tnk", "ftrk", "apc", "jeep")), 0)
                     buildings = [item for _, cmd, item in sim.history if cmd == "build"]
-                    self.assertEqual(buildings[:4], ["powr", "proc", "barr" if soviet else "tent", "weap"]
-                                     if far else ["powr", "barr" if soviet else "tent", "proc", "weap"])
+                    self.assertEqual(buildings[:4], ["powr", "proc", "barr" if soviet else "tent", "proc"]
+                                     if far else ["powr", "barr" if soviet else "tent", "proc", "proc"])
+                    # The second refinery leaves only 20 excess power: the
+                    # 30-power factory must receive another power plant first.
+                    self.assertEqual(buildings[4:6], ["powr", "weap"])
                     self.assertEqual(c.stats["unconfirmed_expiries"], 0)
 
 

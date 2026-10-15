@@ -195,9 +195,13 @@ class RoleControlTests(unittest.TestCase):
         towers = [actor(i, 'tsla', 50, 30) for i in range(100, 106)]
         v = View(snapshot(300, units=own, enemy_buildings=towers))
         orders = Military().propose(v)
-        advances = [i.order for i in orders if i.order['cmd'] == 'attack_move']
+        # Unified standoff must cancel focused pursuit, so all six tanks use
+        # a plain Move rather than an attack-move that can reacquire the wall.
+        advances = [i.order for i in orders if i.order['cmd'] == 'move']
         self.assertTrue(advances)
         self.assertTrue(all(i['to'][0] <= 40 for i in advances))
+        self.assertEqual({uid for order in advances for uid in order['units']}, set(range(1, 7)))
+        self.assertFalse(any(i.order['cmd'] in {'attack', 'attack_move'} for i in orders))
 
     def test_small_raid_does_not_recall_entire_main_army(self):
         own = [actor(i, '1tnk', 15 + i % 3, 14) for i in range(1, 16)]

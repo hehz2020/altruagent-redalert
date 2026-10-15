@@ -2,6 +2,7 @@
 import unittest
 
 from altru_redalert.economy import Economy, _reserved
+from altru_redalert.core import validate_order
 from altru_redalert.model import View
 
 
@@ -80,12 +81,16 @@ class ProductionBudgetTests(unittest.TestCase):
 
     def test_batch_bridges_slow_observations_without_overspending(self):
         v = view(train=["e1", "2tnk"])
+        # Ordinary queue runway after the six-tank development target. During
+        # development the separate strategy deliberately funds one tank.
+        v.units.extend(actor(50 + i, "2tnk") for i in range(6))
         result = orders(v, command="train")
+        self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
+        self.assertTrue(all(validate_order(o, v) == o for o in result))
         rifle = next(o for o in result if o["item"] == "e1")
         tank = next(o for o in result if o["item"] == "2tnk")
         self.assertGreaterEqual(rifle.get("count", 1), 5)
         self.assertEqual(tank.get("count"), 2)
-        self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
 
     def test_queued_tail_is_not_spent_twice(self):
         v = view(cash=1000, train=["e1", "2tnk"],
@@ -96,10 +101,14 @@ class ProductionBudgetTests(unittest.TestCase):
         # Previously selection allowed cost + 200, but batching required
         # cost + 250. The medium tank was selected then silently dropped.
         v = view(cash=1075, train=["2tnk", "1tnk", "e1", "e3"])
+        # Isolate ordinary affordable-unit fallback from development saving,
+        # which intentionally funds a medium tank at its exact 850 price.
+        v.units.extend(actor(50 + i, "2tnk") for i in range(6))
         result = orders(v, command="train")
+        self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
+        self.assertTrue(all(validate_order(o, v) == o for o in result))
         self.assertIn({"cmd": "train", "item": "1tnk"}, result)
         self.assertNotIn({"cmd": "train", "item": "2tnk"}, result)
-        self.assertLessEqual(sum(v.cost(o["item"]) * o.get("count", 1) for o in result), v.funds)
 
     def test_uncertain_train_blocks_additional_queue_orders(self):
         v = view(train=["e1"], pending=[{"cmd": "train", "item": "e1", "count": 8}])
@@ -132,12 +141,17 @@ class ProductionBudgetTests(unittest.TestCase):
     def test_screened_army_adds_artillery_without_spamming_it(self):
         units = [actor(i, "harv") for i in range(20, 24)]
         units += [actor(i, "e1") for i in range(30, 40)]
-        units += [actor(i, "2tnk") for i in range(50, 54)]
+        # Six core tanks now precede normal artillery purchases.
+        units += [actor(i, "2tnk") for i in range(50, 56)]
         result = orders(view(units=units, train=["arty", "2tnk"]), command="train")
         self.assertEqual(result, [{"cmd": "train", "item": "arty"}])
         units.append(actor(60, "arty"))
         result = orders(view(units=units, train=["arty", "2tnk"]), command="train")
+        self.assertEqual(result, [{"cmd": "train", "item": "arty"}])
+        units.append(actor(61, "arty"))
+        result = orders(view(units=units, train=["arty", "2tnk"]), command="train")
         self.assertEqual(result[0]["item"], "2tnk")
+        self.assertFalse(any(o["item"] == "arty" for o in result))
 
     def test_lost_yard_saves_rebuild_cash_instead_of_spending_on_rifles(self):
         v = view(cash=1700, train=["mcv", "e1"])
