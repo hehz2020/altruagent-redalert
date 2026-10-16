@@ -2,7 +2,7 @@ name: Windows executable
 
 on:
   push:
-    branches: [main]
+    branches: [main, improvement/v25-tactics]
   workflow_dispatch:
 
 permissions:

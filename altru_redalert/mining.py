@@ -161,12 +161,23 @@ class MiningManager:
                 "last_damage": -100., "restore_tries": 0})
             elapsed = v.now - state["seen"]
             damage = max(0., state["hp"] - hp)
+            damage_events = state.setdefault("damage_events", deque())
+            if hp > state["hp"] or elapsed > 8:
+                damage_events.clear()
+            while damage_events and v.now - damage_events[0][0] > 8:
+                damage_events.popleft()
+            if damage > 0 and 0 < elapsed <= 8:
+                damage_events.append((v.now, damage))
             if damage > 0:
                 state["last_damage"] = v.now
             previous_point = state.get("point")
             state.update(hp=hp, seen=v.now, point=pos(unit))
             risk = self._risk(v, unit, pos(unit), threats, cover)
-            dangerous = risk >= .20 or (0 < elapsed <= 8 and damage >= 8)
+            # Accumulate short bursts across fast observations. Require a new hit
+            # so damage suffered before reaching safety cannot keep mining paused.
+            damaged_recently = (damage > 0 and 0 < elapsed <= 8
+                                and sum(amount for _, amount in damage_events) >= 8)
+            dangerous = risk >= .20 or damaged_recently
             if dangerous:
                 state.update(retreat=True, danger_at=v.now)
                 if v.now - state["command_at"] >= 4:

@@ -2,11 +2,11 @@ AltruAgent Red Alert Bot — Windows 10/11 x64
 
 不需要安装 Python。
 
-更新到 v2.4：先结束当前对局，再关闭旧机器人窗口，解压并启动新程序。
-启动首行应显示 Bot v2.4。同一账号不要同时运行新旧程序。
+更新到 v2.5：先结束当前对局，再关闭旧机器人窗口，解压并启动新程序。
+启动首行应显示 Bot v2.5。同一账号不要同时运行新旧程序。
 
 这一版改进矿区保护、受袭后恢复采矿、侧翼路线和持续进攻判断。
-v2.4 验证见 VALIDATION_V24.md；BENCHMARK.md 记录旧版本的本地对照。
+v2.5 验证见 VALIDATION_V25.md；BENCHMARK.md 记录旧版本的本地对照。
 测试通过不等于已验证平台比赛胜率。
 
 1. 解压整个 ZIP，然后双击 AltruAgentRedAlert.exe。
