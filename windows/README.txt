@@ -2,11 +2,11 @@ AltruAgent Red Alert Bot — Windows 10/11 x64
 
 不需要安装 Python。
 
-更新到 v2.4：先结束当前对局，再关闭旧机器人窗口，解压并启动新程序。
-启动首行应显示 Bot v2.4。同一账号不要同时运行新旧程序。
+更新到 v2.5：先结束当前对局，再关闭旧机器人窗口，解压并启动新程序。
+启动首行应显示 Bot v2.5。同一账号不要同时运行新旧程序。
 
-这一版改进矿区保护、受袭后恢复采矿、侧翼路线和持续进攻判断。
-v2.4 验证见 VALIDATION_V24.md；BENCHMARK.md 记录旧版本的本地对照。
+这一版改进威胁反制、攻城生产、多处护矿、目标选择、搜索收尾和指令失败恢复。
+v2.5 验证见 VALIDATION_V25.md；BENCHMARK.md 记录旧版本的本地对照。
 测试通过不等于已验证平台比赛胜率。
 
 1. 解压整个 ZIP，然后双击 AltruAgentRedAlert.exe。
@@ -36,4 +36,4 @@ Key 不在安装包内，也不会由本程序写入磁盘。每次启动可重�
 
 脱敏游戏日志默认位于：%LOCALAPPDATA%\AltruAgentRedAlert\logs
 源码与版本：https://github.com/hehz2020/altruagent-redalert
-构建所用提交与依赖见 build-info.json；SHA256SUMS.txt 用于文件校验。
+构建所用提交与依赖见 build-info.json；GitHub 发布页另附 SHA256SUMS.txt 校验文件。

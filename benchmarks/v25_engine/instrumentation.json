@@ -1,0 +1,9 @@
+{
+  "engine": "9b271c1a5562a07deeb1c3f81d9a556cd563a676",
+  "patch_sha256": "b5fe25c61af5adb0ec619f1ff64d10dfdcab8eef62ebdbbe4418139b885b2080",
+  "changes": [
+    "optional deterministic local RNG seeded from lobby RNG seed",
+    "own-seat known WinState terminal reporting",
+    "screen-space effect indexing skipped when no renderer; does not change effect ticks"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "checked_utc": "2026-10-16T06:32:00.792330+00:00",
+  "map_packages": 16,
+  "archive_sha_mismatches": [],
+  "scope": "Reconstructed all frozen zip packages from original downloaded map sources with setup.prepare_maps in a new temporary engine tree. Existing engine maps were not changed."
+}

@@ -136,6 +136,10 @@ class Controller:
         key = r["key"]
         if status in {"rejected", "lost"}:
             r["pending"] = False
+            for policy in (self.economy, self.military):
+                handler = getattr(policy, "mark_failed", None)
+                if callable(handler):
+                    handler(r["order"], r["sent_at"])
             self.stats["engine_rejected" if status == "rejected" else "engine_lost"] += 1
             self._failures[key] += 1
             delay = 0.6 if status == "lost" else min(16.0, 2.0 ** min(self._failures[key], 4))
@@ -288,8 +292,13 @@ class Controller:
                 chunks = [{**o, "units": ids[k:k + max_units]} for k in range(0, len(ids), max_units)]
             used = False
             for chunk in chunks:
+                remaining = max_expanded - expanded
+                if len(orders) >= max_orders or remaining <= 0:
+                    break
+                if "units" in chunk and len(chunk["units"]) > remaining:
+                    chunk = {**chunk, "units": chunk["units"][:remaining]}
                 n = len(chunk["units"]) if "units" in chunk else chunk.get("count", 1)
-                if len(orders) >= max_orders or expanded + n > max_expanded:
+                if n > remaining:
                     continue
                 orders.append(chunk)
                 meta.append((intent, key))
@@ -303,6 +312,9 @@ class Controller:
                 if o["cmd"] in PRODUCTION and v.queue(o["item"]):
                     queues.add(v.queue(o["item"]))
                 self._cooldowns[key] = v.now + max(0, number(intent.cooldown))
+        handler = getattr(self.economy, "mark_sent", None)
+        if callable(handler):
+            handler(orders, v.now)
         if not orders:
             return None
         self._last_ids = []

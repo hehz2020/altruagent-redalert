@@ -1,0 +1,62 @@
+{
+  "selected_utc": "2026-10-16T07:06:20.489744+00:00",
+  "candidate": "candidate_f",
+  "baseline": "released_v24",
+  "manifest_json_sha256": "eb7526e1dd5331622f3dea9d356bfd59acdebb2ff8c150f289a3fbb3036f7dd1",
+  "adapter_source_stream_sha256": "6e6d52b080ae3ce9fea6d8e4660e5adf70dbcd367b2d5510b0a6e1652cb6db2d",
+  "policy_manifest_file_sha256": "357f0e50d2a1f4290199a21766efb4a12c445b7aed0af12ef574c0b44e419d21",
+  "conditions_sha256": "b7f4ac37466ab2149710e0eebaf771ab88d37ac2e0ed4494258c683adbf8d21d",
+  "map_manifest_sha256": "bc401dd5a1e3000771684aa5617d7d1ad0b98477324572a36f74efa69c93e1c8",
+  "declaration_sha256": "ef4b9097b48431d9a75bd48544ae370eb021a71ef8280f61d4e0a4c8bd56f584",
+  "files": {
+    "adapter.py": "bf126ce2f324a7e95b91100a3e9d3e596d8dc0a92b757c48dc26e112b042c1dd",
+    "case_runner.py": "a3f01760568b567c390422d8cafc403b41ff947b8d82aace0d66ce2ee10774d8",
+    "run_stage2.py": "3c5d8d8484f8c17c7cf29632a1775b01c15b6b05f08956ab56258d075dfca545",
+    "instrumentation.patch": "b5fe25c61af5adb0ec619f1ff64d10dfdcab8eef62ebdbbe4418139b885b2080"
+  },
+  "workers": 4,
+  "development_results": [
+    {
+      "condition": "v25_development_1",
+      "outcome": "win",
+      "seconds": 782.8
+    },
+    {
+      "condition": "v25_development_2",
+      "outcome": "win",
+      "seconds": 556.48
+    },
+    {
+      "condition": "v25_development_3",
+      "outcome": "win",
+      "seconds": 1135.84
+    },
+    {
+      "condition": "v25_development_4",
+      "outcome": "lose",
+      "seconds": 1013.92
+    },
+    {
+      "condition": "v25_stage2_development_7",
+      "outcome": "win",
+      "seconds": 1041.04
+    }
+  ],
+  "selection_reason": "F preserves B/E outcomes on original four development cases and E win on the inspected stage1 condition7. It additionally passes independent multi-frame regression checks for pausing search when all units are withdrawing or locally firing. Those extra branches did not change the five engine outcomes and are not claimed to cause added wins.",
+  "known_development_regression": "Original development4 remains loss1013.92s vs v24 win1130.08s. No claim of universal improvement.",
+  "stage1_use": "Stage1 outcomes led to rejection of B; stage1 condition7 was inspected and reused as explicit stage2 development. No stage1 result will be pooled into independent F evaluation.",
+  "provisional_declaration_label": "The stage2 declaration originally named D while development was ongoing. D was not selected; E/F revisions and all their development results are retained. The same eight reserved conditions were never run before this F selection.",
+  "reserved_conditions": [
+    "v25_stage2_held_out_1",
+    "v25_stage2_held_out_2",
+    "v25_stage2_held_out_3",
+    "v25_stage2_held_out_4",
+    "v25_stage2_held_out_5",
+    "v25_stage2_held_out_6",
+    "v25_stage2_held_out_7",
+    "v25_stage2_held_out_8"
+  ],
+  "reserved_case_directories_at_selection": [],
+  "final_worktree_matches_frozen_candidate": true,
+  "post_selection_policy_updates": "None permitted based on reserved outcomes."
+}

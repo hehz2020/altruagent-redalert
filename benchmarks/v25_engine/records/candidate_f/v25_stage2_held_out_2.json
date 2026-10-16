@@ -1,0 +1,533 @@
+{
+  "metadata": {
+    "id": "v25_stage2_held_out_2",
+    "phase": "stage2_held_out",
+    "seed": 5502,
+    "map": "sidestep",
+    "own_side": "Multi1",
+    "own_faction": "england",
+    "enemy_faction": "russia",
+    "opponent": "rush",
+    "seconds_limit": 1200,
+    "tick_step": 5,
+    "frozen_map": "v25_stage2_held_out_2.oramap",
+    "verified_own_faction": "england",
+    "verified_enemy_faction": "russia",
+    "verified_own_seat": "Multi1",
+    "policy": "/workspace/scratch/c89adbb336f5/v25-engine-eval/policies/candidate_f",
+    "label": "candidate_f"
+  },
+  "report": {
+    "result": "win",
+    "engine_done": true,
+    "tick": 14776,
+    "seconds": 591.04,
+    "elapsed_s": 34.202477955004724,
+    "faction": "england",
+    "enemy_faction": "russia",
+    "policy_version": "2.5",
+    "policy_source_sha256": "6e6d52b080ae3ce9fea6d8e4660e5adf70dbcd367b2d5510b0a6e1652cb6db2d",
+    "source_unchanged_during_run": true,
+    "map": "v25_stage2_held_out_2.oramap",
+    "military": {
+      "kills_cost": 27900,
+      "deaths_cost": 9650,
+      "assets_value": 28950,
+      "army_value": 17850,
+      "units_killed": 35,
+      "units_lost": 41,
+      "buildings_killed": 17,
+      "buildings_lost": 0
+    },
+    "economy": {
+      "cash": 1285,
+      "ore": 1618,
+      "power_provided": 200,
+      "power_drained": 200,
+      "resource_capacity": 4000,
+      "harvesters": 4
+    },
+    "samples": [
+      {
+        "tick": 4,
+        "cash": 5000,
+        "ore": 0,
+        "army": 2000,
+        "assets": 2000,
+        "kills_cost": 0,
+        "deaths_cost": 0,
+        "units": {
+          "mcv": 1
+        },
+        "buildings": {}
+      },
+      {
+        "tick": 754,
+        "cash": 3551,
+        "ore": 0,
+        "army": 300,
+        "assets": 3100,
+        "kills_cost": 0,
+        "deaths_cost": 0,
+        "units": {
+          "e1": 3
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 1,
+          "tent": 1
+        }
+      },
+      {
+        "tick": 1504,
+        "cash": 2331,
+        "ore": 0,
+        "army": 1400,
+        "assets": 5600,
+        "kills_cost": 0,
+        "deaths_cost": 0,
+        "units": {
+          "e1": 3,
+          "harv": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 1,
+          "tent": 1,
+          "proc": 1
+        }
+      },
+      {
+        "tick": 2254,
+        "cash": 1971,
+        "ore": 129,
+        "army": 2500,
+        "assets": 8100,
+        "kills_cost": 0,
+        "deaths_cost": 0,
+        "units": {
+          "e1": 3,
+          "harv": 2
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 1,
+          "tent": 1,
+          "proc": 2
+        }
+      },
+      {
+        "tick": 3004,
+        "cash": 1838,
+        "ore": 453,
+        "army": 2500,
+        "assets": 8400,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 3,
+          "harv": 2
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 1,
+          "proc": 2
+        }
+      },
+      {
+        "tick": 3754,
+        "cash": 1838,
+        "ore": 987,
+        "army": 2600,
+        "assets": 10500,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 4,
+          "harv": 2
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 1,
+          "proc": 2,
+          "weap": 1
+        }
+      },
+      {
+        "tick": 4504,
+        "cash": 1370,
+        "ore": 72,
+        "army": 4200,
+        "assets": 13300,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 6,
+          "harv": 3,
+          "e3": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 1,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1
+        }
+      },
+      {
+        "tick": 5254,
+        "cash": 1285,
+        "ore": 946,
+        "army": 5750,
+        "assets": 14850,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 10,
+          "harv": 3,
+          "e3": 2,
+          "2tnk": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 1,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1
+        }
+      },
+      {
+        "tick": 6004,
+        "cash": 1285,
+        "ore": 1536,
+        "army": 7650,
+        "assets": 16750,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 12,
+          "harv": 3,
+          "e3": 2,
+          "2tnk": 3
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 1,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1
+        }
+      },
+      {
+        "tick": 6754,
+        "cash": 1285,
+        "ore": 1547,
+        "army": 8750,
+        "assets": 18350,
+        "kills_cost": 0,
+        "deaths_cost": 100,
+        "units": {
+          "e1": 12,
+          "harv": 4,
+          "e3": 2,
+          "2tnk": 3
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1
+        }
+      },
+      {
+        "tick": 7504,
+        "cash": 1285,
+        "ore": 1396,
+        "army": 9450,
+        "assets": 19050,
+        "kills_cost": 3100,
+        "deaths_cost": 950,
+        "units": {
+          "e1": 14,
+          "harv": 4,
+          "e3": 2,
+          "2tnk": 3,
+          "jeep": 1,
+          "2tnk.husk": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1
+        }
+      },
+      {
+        "tick": 8254,
+        "cash": 1285,
+        "ore": 1387,
+        "army": 7400,
+        "assets": 18500,
+        "kills_cost": 3900,
+        "deaths_cost": 4350,
+        "units": {
+          "harv": 4,
+          "e1": 10,
+          "2tnk.husk": 2,
+          "2tnk": 2,
+          "e3": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 9004,
+        "cash": 1285,
+        "ore": 646,
+        "army": 9450,
+        "assets": 20550,
+        "kills_cost": 5550,
+        "deaths_cost": 4950,
+        "units": {
+          "harv": 4,
+          "e1": 11,
+          "2tnk": 2,
+          "e3": 3,
+          "arty": 1,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 9754,
+        "cash": 1285,
+        "ore": 1251,
+        "army": 8300,
+        "assets": 19400,
+        "kills_cost": 8650,
+        "deaths_cost": 7050,
+        "units": {
+          "harv": 4,
+          "e1": 11,
+          "e3": 2,
+          "arty": 1,
+          "jeep": 1,
+          "2tnk.husk": 2,
+          "2tnk": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 10504,
+        "cash": 1285,
+        "ore": 1855,
+        "army": 10200,
+        "assets": 21300,
+        "kills_cost": 8650,
+        "deaths_cost": 7050,
+        "units": {
+          "harv": 4,
+          "e1": 13,
+          "e3": 2,
+          "arty": 1,
+          "jeep": 1,
+          "2tnk": 3
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 11254,
+        "cash": 1285,
+        "ore": 1506,
+        "army": 10650,
+        "assets": 21750,
+        "kills_cost": 10750,
+        "deaths_cost": 9150,
+        "units": {
+          "harv": 4,
+          "arty": 1,
+          "e1": 9,
+          "2tnk": 4,
+          "e3": 2,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 12004,
+        "cash": 1285,
+        "ore": 895,
+        "army": 12600,
+        "assets": 23700,
+        "kills_cost": 12500,
+        "deaths_cost": 9350,
+        "units": {
+          "harv": 4,
+          "arty": 1,
+          "2tnk": 5,
+          "e1": 17,
+          "e3": 3,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 12754,
+        "cash": 1285,
+        "ore": 1646,
+        "army": 13550,
+        "assets": 24650,
+        "kills_cost": 13600,
+        "deaths_cost": 9350,
+        "units": {
+          "harv": 4,
+          "arty": 1,
+          "2tnk": 6,
+          "e1": 18,
+          "e3": 3,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 13504,
+        "cash": 1285,
+        "ore": 1018,
+        "army": 15950,
+        "assets": 27050,
+        "kills_cost": 21650,
+        "deaths_cost": 9550,
+        "units": {
+          "harv": 4,
+          "arty": 2,
+          "2tnk": 7,
+          "e1": 22,
+          "e3": 4,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      },
+      {
+        "tick": 14254,
+        "cash": 1285,
+        "ore": 1486,
+        "army": 17000,
+        "assets": 28100,
+        "kills_cost": 25100,
+        "deaths_cost": 9650,
+        "units": {
+          "harv": 4,
+          "arty": 2,
+          "2tnk": 8,
+          "e1": 24,
+          "e3": 4,
+          "jeep": 1
+        },
+        "buildings": {
+          "fact": 1,
+          "powr": 2,
+          "tent": 2,
+          "proc": 2,
+          "weap": 1,
+          "fix": 1,
+          "dome": 1
+        }
+      }
+    ],
+    "orders": {
+      "deploy": 1,
+      "build": 9,
+      "place": 9,
+      "train": 54,
+      "move": 40,
+      "attack_move": 290,
+      "attack": 211,
+      "harvest": 2
+    },
+    "controller_stats": {
+      "observations": 2462,
+      "batches": 514,
+      "orders": 616,
+      "engine_ok": 616,
+      "observed_confirmations": 73
+    },
+    "map_diagnostics": {
+      "unknown_terrain_cells": 0,
+      "source_sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7"
+    }
+  },
+  "trace_sha256": "c93ba28468a6a5f7802fcac37dce467e839f0e32cf4a18e031e6c9a3b3ca0393",
+  "result_sha256": "b655c4f6c79db86eb4bd607247f580c8e680bda75898de89b1e9b35507762b73"
+}

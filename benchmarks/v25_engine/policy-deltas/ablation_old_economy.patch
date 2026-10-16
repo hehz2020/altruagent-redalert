@@ -1,0 +1,613 @@
+--- a/altru_redalert/__init__.py
++++ b/altru_redalert/__init__.py
+@@ -2,7 +2,7 @@
+ 
+ from typing import TYPE_CHECKING, Any
+ 
+-__version__ = "2.4"
++__version__ = "2.5"
+ 
+ if TYPE_CHECKING:
+     from .adapter import RedAlertAgent
+--- a/altru_redalert/combat.py
++++ b/altru_redalert/combat.py
+@@ -84,6 +84,18 @@
+         self.assault_until = 0.
+         self.assault_health = 0.
+         self.assault_ratio = None
++        self.ratio_view = None
++        self.ratio_values = {}
++
++    def _ratio(self, view, own, enemy, horizon=8., *, projected=False):
++        if self.ratio_view is not view:
++            self.ratio_view = view
++            self.ratio_values = {}
++        key = (tuple(sorted(_id(a) for a in own)), tuple(sorted(_id(a) for a in enemy)),
++               horizon, projected)
++        if key not in self.ratio_values:
++            self.ratio_values[key] = force_ratio(view, own, enemy, horizon=horizon, projected=projected)
++        return self.ratio_values[key]
+ 
+     def _combat(self, view, actor):
+         kind = _kind(actor)
+@@ -126,6 +138,17 @@
+                 continue
+             for uid in order.get("units", []):
+                 self.desired[uid] = (signature, now)
++
++    def mark_failed(self, order, sent_at):
++        if order.get("cmd") == "attack" and "target" in order:
++            signature = ("attack", order["target"])
++        elif order.get("cmd") in {"move", "attack_move"} and "to" in order:
++            signature = (order["cmd"], tuple(order["to"]))
++        else:
++            return
++        for uid in order.get("units", []):
++            if self.desired.get(uid) == (signature, sent_at):
++                del self.desired[uid]
+ 
+     def _orders(self, view, actors, cmd, point, role, priority=40, *, arrival=2.5,
+                 interrupt=False):
+@@ -186,7 +209,9 @@
+             passable = {(origin[0] + j, origin[1] + i)
+                         for i, row in enumerate(rows) for j, char in enumerate(row)
+                         if char in ".,=_$*S"}
+-            start = min(passable, key=lambda p: distance(p, view.base), default=None)
++            start = tuple(view.base) if tuple(view.base) in passable else min(
++                passable, key=lambda p: (p[0] - view.base[0]) ** 2 + (p[1] - view.base[1]) ** 2,
++                default=None)
+             if start is not None:
+                 reachable, queue = {start}, deque([start])
+                 while queue:
+@@ -198,8 +223,9 @@
+         self.sweep = []
+         for candidate in candidates:
+             point = view.ground_point(candidate)
+-            if reachable:
+-                point = min(reachable, key=lambda p: distance(p, candidate))
++            if reachable and (point is None or tuple(point) not in reachable):
++                point = min(reachable, key=lambda p: (p[0] - candidate[0]) ** 2
++                            + (p[1] - candidate[1]) ** 2)
+             if point is not None and tuple(point) not in self.sweep:
+                 self.sweep.append(tuple(point))
+         if view.enemy_base is not None:
+@@ -227,9 +253,9 @@
+             if any(distance(pos(a), point) < 5 for a in army):
+                 self.visited[point] = view.now
+ 
+-    def _goal(self, view, center):
++    def _goal(self, view, center, army=None):
+         routes = self._navigation(view)
+-        army = [a for a in view.units if self._combat(view, a)]
++        army = army if army is not None else [a for a in view.units if self._combat(view, a)]
+         origin = pos(min(army, key=lambda a: distance(pos(a), center))) if army else center
+         def accessible(point, target=None):
+             if not routes.available or origin not in routes.cells:
+@@ -237,18 +263,35 @@
+             landing = routes.waypoint(origin, point, distance_cells=1e9)
+             reach = max((weapon_range(view, a, target) for a in army), default=4.)
+             return landing is not None and distance(landing, point) <= max(1., reach)
+-        visible = [b for b in view.enemy_buildings if living(b) and pos(b) is not None
+-                   and accessible(pos(b), b)]
+-        if visible:
+-            priorities = {"weap": 16, "proc": 14, "fact": 12, "barr": 7, "tent": 7,
+-                          "powr": 5, "apwr": 7, "dome": 4}
+-            def rank(building):
+-                value = distance(center, pos(building)) - priorities.get(_kind(building), 0)
++        visible = [b for b in view.enemy_buildings if living(b) and pos(b) is not None]
++        visible_ids = {_id(b) for b in visible}
++        known = visible + [a for uid, (a, seen, building) in self.contacts.items()
++                           if building and uid not in visible_ids and living(a)
++                           and view.now - seen < 120 and pos(a) is not None]
++        candidates = [b for b in known if accessible(pos(b), b)]
++        if candidates:
++            priorities = {"weap": 22, "proc": 20, "fact": 18, "barr": 10, "tent": 10,
++                          "powr": 6, "apwr": 10, "dome": 5, "fix": 4}
++            def preliminary(building):
++                value = .7 * distance(center, pos(building)) - priorities.get(_kind(building), -8)
+                 value += 16 if _kind(building) in GROUND_DEFENSE else 0
+                 if self.army_goal is not None and distance(pos(building), self.army_goal) <= 3:
+                     value -= 5
++                if _id(building) not in visible_ids:
++                    value += 3 + min(6., (view.now - self.contacts[_id(building)][1]) * .05)
+                 return value, _id(building)
+-            return pos(min(visible, key=rank))
++            enemies = [a for a in view.enemies + view.enemy_buildings
++                       if living(a) and pos(a) is not None]
++            def rank(building):
++                value = preliminary(building)[0]
++                resistance = self._resistance(view, pos(building), enemies, army)
++                if resistance:
++                    ratio = self._ratio(view, army, resistance, horizon=30, projected=True)
++                    value += min(38., 18. * max(0., 1.1 - ratio) / max(.35, ratio))
++                return value, _id(building)
++            shortlist = sorted(candidates, key=preliminary)[:6]
++            ceiling = preliminary(shortlist[0])[0] + 38.
++            return pos(min((b for b in shortlist if preliminary(b)[0] <= ceiling), key=rank))
+         mcvs = [u for u in view.enemies if living(u) and _kind(u) == "mcv"
+                 and pos(u) is not None and accessible(pos(u), u)]
+         if mcvs:
+@@ -384,60 +427,110 @@
+             if not attackers:
+                 continue
+             fixed = _kind(asset) in {"fact", "proc", "weap", "barr", "tent"}
+-            emergency = fixed and (len(attackers) >= 4 or
++            capture = fixed and any(_kind(e) in {"e6", "thf"} for e in attackers)
++            emergency = fixed and (capture or len(attackers) >= 4 or
+                 sum(self._value(view, e, e in view.enemy_buildings) for e in attackers) >= 2200)
+             endangered = max(0., 100. - _hp(asset)) / 20.
+-            score = (20 if emergency else 0) + (5 if _kind(asset) == "harv" else 3)
++            score = (45 if capture else 20 if emergency else 0) + (5 if _kind(asset) == "harv" else 3)
+             score += endangered + min(8, len(attackers))
+             score -= min(distance(pos(e), pos(asset)) for e in attackers) * .3
+             incidents.append((score, asset, attackers, emergency))
+         if not incidents:
+             return [], set()
+-        _, asset, threats, emergency = max(incidents, key=lambda entry: entry[0])
+-        target = min(threats, key=lambda e: distance(pos(e), pos(asset)))
++        orders, assigned, handled = [], set(), set()
++        zones = 0
++        for _, asset, threats, emergency in sorted(incidents, key=lambda entry: -entry[0]):
++            pending = [e for e in threats if _id(e) not in handled]
++            if not pending:
++                continue
++            remaining = [a for a in army if _id(a) not in assigned]
++            response, defenders, covered = self._defend_zone(
++                view, remaining, enemies, asset, pending, emergency, handled)
++            orders += response
++            assigned.update(defenders)
++            handled.update(covered)
++            zones += bool(defenders)
++            if len(assigned) == len(army) or zones >= 3:
++                break
++        return orders, assigned
++
++    def _defend_zone(self, view, army, enemies, asset, threats, emergency, handled):
++        target = min(threats, key=lambda e: (_kind(e) not in {"e6", "thf"},
++                                            distance(pos(e), pos(asset))))
+         local = [e for e in enemies if pos(e) is not None and
++                 _id(e) not in handled and
+                  (weapons(view, e) or _kind(e) in {"e6", "thf"})
+                  and distance(pos(e), pos(target)) < 11]
+-        structures = [b for b in protected if _kind(b) != "harv" and b in view.buildings]
++        structures = [b for b in view.buildings if _kind(b) in {"fact", "proc", "weap", "barr", "tent"}
++                      and living(b) and pos(b) is not None]
+         remote = (_kind(asset) == "harv" and
+                   min((distance(pos(asset), pos(b)) for b in structures), default=99) > 20)
+         shelters = [b for b in view.buildings if weapons(view, b) and
+                     any(damage_rate(view, b, e, at_distance=distance(pos(b), pos(e))) > 0
+                         for e in local)]
+-        if (shelters and _hp(asset) >= 80 and force_ratio(view, shelters, local) >= 1.6
++        if (shelters and _hp(asset) >= 80 and not any(_kind(e) in {"e6", "thf"} for e in threats)
++                and self._ratio(view, shelters, local) >= 1.6
+                 and all(any(damage_rate(view, b, e,
+                             at_distance=distance(pos(b), pos(e))) > 0 for b in shelters) for e in local)):
+-            return [], set()
++            return [], set(), {_id(e) for e in threats}
++        routes = self._navigation(view)
++        def accessible(actor):
++            if not routes.available or pos(actor) not in routes.cells:
++                return True
++            landing = routes.waypoint(pos(actor), pos(target), distance_cells=1e9)
++            return landing is not None and distance(landing, pos(target)) <= max(
++                1., weapon_range(view, actor, target))
+         candidates = [a for a in army if any(damage_rate(view, a, e) > 0 for e in local)
+-                      and (emergency or distance(pos(a), pos(asset)) <= (22 if remote else 30))]
++                      and (emergency or distance(pos(a), pos(asset)) <= (22 if remote else 30))
++                      and accessible(a)]
+         candidates.sort(key=lambda a: distance(pos(a), pos(target)) / max(.4, speed(view, a))
+                         + min((health(view, e) / max(1., damage_rate(view, a, e))
+                                for e in local if damage_rate(view, a, e) > 0), default=1000) * .1)
+         if not candidates:
+-            return [], set()
++            return [], set(), set()
+         cap = len(candidates) if emergency else min(3 if remote else 6, max(2, (len(army) + 2) // 3))
++        capture_count = sum(_kind(e) in {"e6", "thf"} for e in threats) if _kind(asset) != "harv" else 0
+         defenders = []
+         for a in candidates[:cap]:
+             defenders.append(a)
+-            if force_ratio(view, defenders + shelters, local, horizon=16) >= 1.35:
++            if len(defenders) >= capture_count and self._ratio(view, defenders + shelters, local, horizon=16) >= 1.35:
+                 break
+         ids = {_id(a) for a in defenders}
++        covered = {_id(e) for e in threats if any(
++            damage_rate(view, a, e) > 0 for a in defenders + shelters)}
++        role = str(_id(asset))
+         center = _center(defenders)
+-        ratio = force_ratio(view, defenders + shelters, local)
+-        if ratio < .65 and any(distance(pos(a), pos(e)) < 9 for a in defenders for e in local):
++        ratio = self._ratio(view, defenders + shelters, local)
++        capture = [e for e in threats if _kind(e) in {"e6", "thf"} and _kind(asset) != "harv"]
++        if not capture and ratio < .65 and any(distance(pos(a), pos(e)) < 9 for a in defenders for e in local):
+             refuge = min(shelters, key=lambda b: distance(pos(b), center), default=None)
+             if refuge is not None:
+                 return self._orders(view, defenders, "attack_move", pos(refuge),
+-                                    "defense-cover", 97), ids
++                                    "defense-cover-" + role, 97), ids, covered
+             self.withdraw_goal = self._fallback(view, center, local)
+-            return self._withdraw(view, defenders, local, "defense-withdraw"), ids
+-        orders, engaged = self._local_fire(view, [a for a in defenders if _kind(a) not in ARTILLERY],
+-                                          local, "defense-fire", 96)
+-        guns, gun_ids = self._support(view, defenders, pos(target), local)
++            return self._withdraw(view, defenders, local, "defense-withdraw-" + role), ids, covered
++        interceptors, intercept_ids = [], set()
++        for enemy in capture:
++            interceptor = min((a for a in defenders if _id(a) not in intercept_ids
++                               and damage_rate(view, a, enemy) > 0 and _kind(a) not in ARTILLERY),
++                              key=lambda a: max(0., distance(pos(a), pos(enemy))
++                                  - weapon_range(view, a, enemy)) / max(.4, speed(view, a))
++                                  + health(view, enemy) / max(1., damage_rate(view, a, enemy)),
++                              default=None)
++            if interceptor is not None:
++                interceptors.append((interceptor, enemy))
++                intercept_ids.add(_id(interceptor))
++        orders = self._attack_orders(view, interceptors, "capture-" + role, 102)
++        fire, engaged = self._local_fire(view, [a for a in defenders if _kind(a) not in ARTILLERY
++                                              and _id(a) not in intercept_ids],
++                                        local, "defense-fire-" + role, 96)
++        orders += fire
++        guns, gun_ids = self._support(view, [a for a in defenders if _id(a) not in intercept_ids],
++                                      pos(target), local)
+         orders += guns
+-        orders += self._orders(view, [a for a in defenders if _id(a) not in engaged | gun_ids],
+-                               "attack_move", pos(target), "defense", 95)
+-        return orders, ids
++        orders += self._orders(view, [a for a in defenders if _id(a) not in engaged | gun_ids | intercept_ids],
++                               "attack_move", pos(target), "defense-" + role, 95)
++        return orders, ids, covered
+ 
+     def _raid(self, view, army, enemies):
+         if len(army) < 14 or any(distance(pos(e), _center(army)) < 12 and weapons(view, e) for e in enemies):
+@@ -455,7 +548,7 @@
+                 continue
+             raiders = sorted(fast, key=lambda a: (_id(a) not in self.raid_ids,
+                                                   distance(pos(a), pos(target))))[:3]
+-            if guards and force_ratio(view, raiders, guards, horizon=18) < 1.7:
++            if guards and self._ratio(view, raiders, guards, horizon=18) < 1.7:
+                 continue
+             self.raid_ids = {_id(a) for a in raiders}
+             orders, firing = self._local_fire(view, raiders, [target] + guards, "raid-fire", 75)
+@@ -657,7 +750,7 @@
+                 or distance(goal, self.assault_goal) > 6):
+             return False
+         resistance = self._resistance(view, goal, enemies, army)
+-        ratio = force_ratio(view, army, resistance, horizon=24, projected=True)
++        ratio = self._ratio(view, army, resistance, horizon=24, projected=True)
+         intact = sum(health(view, a) for a in army) >= self.assault_health * .68
+         if ratio < .85 or not intact:
+             self.assault_until = 0.
+@@ -669,7 +762,7 @@
+         center = self._body_center(army, goal)
+         if distance(center, goal) > 23:
+             return None
+-        ratio = force_ratio(view, army, resistance, horizon=30, projected=True)
++        ratio = self._ratio(view, army, resistance, horizon=30, projected=True)
+         self.assault_ratio = ratio
+         active = self._assault_active(view, army, goal, enemies)
+         if not resistance or ratio >= 1.1 or active:
+@@ -698,26 +791,29 @@
+                    if living(e) and pos(e) is not None]
+         self._prepare_sweep(view)
+         self._remember(view, army)
+-        orders, scout_id = self._scout(view, army, enemies)
+-        main = [a for a in army if _id(a) != scout_id]
+-        if not main:
+-            return orders
+-        defense, defending = self._defense(view, main, enemies)
+-        orders += defense
+-        main = [a for a in main if _id(a) not in defending]
++        orders, defending = self._defense(view, army, enemies)
++        if self.scout_id in defending:
++            self.scout_id = None
++            self.scout_goal = None
++        main = [a for a in army if _id(a) not in defending]
+         if not main:
+             self._set_mode("defend", view.now)
++            return orders
++        scouting, scout_id = self._scout(view, main, enemies)
++        orders += scouting
++        main = [a for a in main if _id(a) != scout_id]
++        if not main:
+             return orders
+         raids, raiding = self._raid(view, main, enemies)
+         orders += raids
+         main = [a for a in main if _id(a) not in raiding]
+         center = _center(main)
+-        goal = self._goal(view, center)
++        goal = self._goal(view, center, main)
+         nearby = [e for e in enemies if weapons(view, e) and distance(pos(e), center) < 17]
+         local = [a for a in main if distance(pos(a), center) < 15]
+         support = [b for b in view.buildings if _kind(b) in GROUND_DEFENSE | {"agun", "sam"}
+                    and b.get("powered", True) and distance(pos(b), center) < 10]
+-        ratio = force_ratio(view, local + support, nearby)
++        ratio = self._ratio(view, local + support, nearby)
+         self.last_ratio = ratio
+         assaulting = self._assault_active(view, main, goal, enemies)
+         if nearby and ratio < (.68 if assaulting else .8):
+--- a/altru_redalert/core.py
++++ b/altru_redalert/core.py
+@@ -136,6 +136,10 @@
+         key = r["key"]
+         if status in {"rejected", "lost"}:
+             r["pending"] = False
++            for policy in (self.economy, self.military):
++                handler = getattr(policy, "mark_failed", None)
++                if callable(handler):
++                    handler(r["order"], r["sent_at"])
+             self.stats["engine_rejected" if status == "rejected" else "engine_lost"] += 1
+             self._failures[key] += 1
+             delay = 0.6 if status == "lost" else min(16.0, 2.0 ** min(self._failures[key], 4))
+@@ -288,8 +292,13 @@
+                 chunks = [{**o, "units": ids[k:k + max_units]} for k in range(0, len(ids), max_units)]
+             used = False
+             for chunk in chunks:
++                remaining = max_expanded - expanded
++                if len(orders) >= max_orders or remaining <= 0:
++                    break
++                if "units" in chunk and len(chunk["units"]) > remaining:
++                    chunk = {**chunk, "units": chunk["units"][:remaining]}
+                 n = len(chunk["units"]) if "units" in chunk else chunk.get("count", 1)
+-                if len(orders) >= max_orders or expanded + n > max_expanded:
++                if n > remaining:
+                     continue
+                 orders.append(chunk)
+                 meta.append((intent, key))
+@@ -303,6 +312,9 @@
+                 if o["cmd"] in PRODUCTION and v.queue(o["item"]):
+                     queues.add(v.queue(o["item"]))
+                 self._cooldowns[key] = v.now + max(0, number(intent.cooldown))
++        handler = getattr(self.economy, "mark_sent", None)
++        if callable(handler):
++            handler(orders, v.now)
+         if not orders:
+             return None
+         self._last_ids = []
+--- a/altru_redalert/economy.py
++++ b/altru_redalert/economy.py
+@@ -721,3 +721,13 @@
+                     intents.append(Intent(order, priority=74 if air and item == "e3" else 72 if home_danger else 60,
+                                           cooldown=.6, key=f"train:{item}"))
+         return intents
++
++
++    def mark_sent(self, orders, now):
++        if hasattr(self, "_mining"):
++            self._mining.mark_sent(orders, now)
++
++
++    def mark_failed(self, order, sent_at):
++        if hasattr(self, "_mining"):
++            self._mining.mark_failed(order, sent_at)
+--- a/altru_redalert/macro_map.py
++++ b/altru_redalert/macro_map.py
+@@ -60,7 +60,7 @@
+         start = pos(start)
+         if start in self._paths:
+             return self._paths[start]
+-        if start is None or not self.resources:
++        if start is None or self.origin is None or not self.rows:
+             return {}
+         candidates = [(start[0] + x, start[1] + y) for y in range(-3, 4) for x in range(-3, 4)]
+         candidates = [p for p in candidates if self.clear(p)]
+@@ -79,6 +79,19 @@
+             self._paths.clear()
+         self._paths[start] = result
+         return result
++
++    def approachable(self, start, target, radius):
++        if self.origin is None or not self.rows:
++            return True
++        paths = self.distances(start)
++        point = pos(target)
++        if point is None or not paths:
++            return False
++        reach = int(radius)
++        return any((point[0] + dx, point[1] + dy) in paths
++                   and dx * dx + dy * dy <= radius * radius
++                   for dx in range(-reach, reach + 1)
++                   for dy in range(-reach, reach + 1))
+ 
+     def expansion(self, view, blocked=()):
+         anchors = [pos(b) for b in view.buildings if b.get("type") in {"fact", "proc"} and pos(b)]
+--- a/altru_redalert/mining.py
++++ b/altru_redalert/mining.py
+@@ -9,6 +9,49 @@
+     def __init__(self):
+         self.units = {}
+         self._map = None
++        self._offered = {}
++        self._issued = {}
++
++    def _signature(self, order):
++        return order.get("cmd"), tuple(order["to"]) if "to" in order else None
++
++    def _offer(self, uid, order, now, **changes):
++        state = self.units[uid]
++        before = {key: (key in state, state.get(key)) for key in changes}
++        state.update(changes)
++        self._offered[uid] = (self._signature(order), now, before)
++
++    def _restore(self, uid, before):
++        state = self.units.get(uid)
++        if state is None:
++            return
++        for key, (present, value) in before.items():
++            if present:
++                state[key] = value
++            else:
++                state.pop(key, None)
++
++    def mark_sent(self, orders, now):
++        sent = {(uid, self._signature(order)) for order in orders
++                for uid in order.get("units", [])}
++        for uid, (signature, proposed_at, before) in self._offered.items():
++            if proposed_at != now:
++                continue
++            if (uid, signature) in sent:
++                self._issued[uid] = (signature, now, before)
++            else:
++                self._restore(uid, before)
++        self._offered.clear()
++
++    def mark_failed(self, order, sent_at):
++        signature = self._signature(order)
++        for uid in order.get("units", []):
++            issued = self._issued.get(uid)
++            state = self.units.get(uid)
++            if (issued and issued[:2] == (signature, sent_at)
++                    and state and state.get("command_at") == sent_at):
++                self._restore(uid, issued[2])
++                self._issued.pop(uid, None)
+ 
+     def _risk(self, v, unit, point, threats, cover, horizon=8):
+         target = {**unit, "x": point[0], "y": point[1]}
+@@ -102,7 +145,7 @@
+ 
+     def _ore(self, v, unit, threats, cover, refs, reserved, delivery_limit=28):
+         if not refs or not self._map.resources:
+-            return None
++            return None, False
+         paths = self._map.distances(pos(unit))
+         refinery_paths = [self._map.distances(pos(ref)) for ref in refs]
+         candidates = []
+@@ -114,6 +157,7 @@
+             crowding = sum(max(0., 4 - distance(point, used)) for used in reserved)
+             candidates.append((outbound + inbound * 1.8 + crowding * 3, point))
+         cells = set()
++        blocked = False
+         for _, point in sorted(candidates):
+             cell = (point[0] // 3, point[1] // 3)
+             if cell in cells:
+@@ -124,14 +168,16 @@
+             route = self._path(pos(unit), point, paths)
+             if any(self._risk(v, unit, p, threats, cover) >= .18
+                    for p in route[::2] + [point]):
++                blocked = True
+                 continue
+             ref_index = min(range(len(refs)), key=lambda i: refinery_paths[i].get(point, 10000))
+             delivery = self._path(pos(refs[ref_index]), point, refinery_paths[ref_index])
+             if any(self._risk(v, unit, p, threats, cover) >= .18
+                    for p in delivery[::2] + [point]):
+-                continue
+-            return list(point)
+-        return None
++                blocked = True
++                continue
++            return list(point), False
++        return None, blocked
+ 
+     def _delivering(self, unit, refs):
+         activity = str(unit.get("act", unit.get("activity", unit.get("state", "")))).lower()
+@@ -144,15 +190,22 @@
+ 
+     def propose(self, v, macro_map):
+         self._map = macro_map
++        self._offered = {}
+         harvesters = [u for u in v.units if u.get("type") == "harv" and pos(u)]
+         live = {u["id"] for u in harvesters}
+         self.units = {uid: state for uid, state in self.units.items()
+                       if uid in live and state["seen"] <= v.now}
++        self._issued = {uid: issued for uid, issued in self._issued.items()
++                        if uid in self.units and issued[1] <= v.now}
+         refs = [b for b in v.buildings if b.get("type") == "proc" and pos(b)]
+         threats = [e for e in v.enemies + v.enemy_buildings if pos(e) and weapons(v, e)]
+         cover = [a for a in v.units + v.buildings if pos(a) and weapons(v, a)]
+         reserved = [state["target"] for state in self.units.values()
+                     if state.get("target") and v.now - state.get("restored_at", 0) < 20]
++        reserved += [pos(u) for u in harvesters if not u.get("idle")
++                     and not self._delivering(u, refs)
++                     and any((pos(u)[0] + dx, pos(u)[1] + dy) in self._map.resources
++                             for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
+         orders = []
+         for unit in harvesters:
+             uid, hp = unit["id"], number(unit.get("hp"), 100)
+@@ -172,8 +225,9 @@
+                 if v.now - state["command_at"] >= 4:
+                     target = self._refuge(v, unit, threats, cover, refs, risk)
+                     if target:
+-                        state.update(command_at=v.now, escape_target=target)
+-                        orders.append(Intent({"cmd": "move", "units": [uid], "to": target},
++                        order = {"cmd": "move", "units": [uid], "to": target}
++                        self._offer(uid, order, v.now, command_at=v.now, escape_target=target)
++                        orders.append(Intent(order,
+                                              priority=97, cooldown=4, key=f"harv-escape:{uid}"))
+                 continue
+             restoring = state["retreat"]
+@@ -203,8 +257,12 @@
+                 continue
+             recent = v.now - state.get("restored_at", -100) < 60
+             exhausted = recent and state["restore_tries"] >= 2
+-            target = None if exhausted else self._ore(
+-                v, unit, threats, cover, refs, reserved, 18 if outward else 28)
++            target, blocked = self._ore(v, unit, threats, cover, refs, reserved,
++                                        18 if outward else 28)
++            if blocked:
++                continue
++            if exhausted:
++                target = None
+             if outward and target is None:
+                 continue
+             if target is None and threats and self._map.resources:
+@@ -217,11 +275,12 @@
+             if target:
+                 order["to"] = target
+                 reserved.append(target)
+-            state.update(retreat=False, command_at=v.now, target=target,
+-                         restored_at=v.now, restore_tries=state["restore_tries"] + 1 if recent else 1)
+-            state.pop("escape_target", None)
++            changes = dict(retreat=False, command_at=v.now, target=target,
++                           restored_at=v.now, restore_tries=state["restore_tries"] + 1 if recent else 1,
++                           escape_target=None)
+             if outward:
+-                state["far_redirected"] = True
++                changes["far_redirected"] = True
++            self._offer(uid, order, v.now, **changes)
+             orders.append(Intent(order, priority=84 if restoring else 82,
+                                  cooldown=4, key=f"harvest:{uid}"))
+         return orders
+--- a/altru_redalert/model.py
++++ b/altru_redalert/model.py
+@@ -38,6 +38,8 @@
+         pair = actor
+     else:
+         return None
++    if type(pair[0]) is int and type(pair[1]) is int:
++        return pair[0], pair[1]
+     if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not isfinite(v) for v in pair):
+         return None
+     return int(pair[0]), int(pair[1])
+@@ -141,6 +143,7 @@
+         remaining = _dict(self.raw.get("time")).get("remaining_seconds")
+         self.remaining = max(0, number(remaining)) if remaining is not None else inf
+         self.military = _dict(self.obs.get("military"))
++        self._weapon_profiles = {}
+ 
+     def spec(self, item: str) -> dict:
+         return self.catalog.get(str(item).lower(), {})
+--- a/altru_redalert/tactics.py
++++ b/altru_redalert/tactics.py
+@@ -102,6 +102,13 @@
+     k = kind(actor)
+     observed = view.spec(k).get('weapon')
+     observed = observed if isinstance(observed, dict) else {}
++    cache_key = (k, str(observed.get('weapon', '')),
++                 number(observed.get('range_cells'), None),
++                 number(observed.get('damage'), None),
++                 number(observed.get('reload_seconds'), None))
++    cached = view._weapon_profiles.get(cache_key)
++    if cached is not None:
++        return cached
+     profiles = PROFILES.get(k, ())
+     if not profiles and number(observed.get('damage')) > 0:
+         profiles = (Weapon(str(observed.get('weapon', 'unknown')),
+@@ -115,7 +122,9 @@
+             max(0., number(observed.get('damage'), w.damage)) if matches else w.damage,
+             max(.08, number(observed.get('reload_seconds'), w.reload)) if matches else w.reload,
+             w.versus, w.burst, w.minimum, w.domain, w.splash, w.accuracy))
+-    return tuple(result)
++    result = tuple(result)
++    view._weapon_profiles[cache_key] = result
++    return result
+ 
+ 
+ def weapon_range(view, attacker, target=None):

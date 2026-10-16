@@ -1,0 +1,11 @@
+/OpenRA
+dotnet/
+/generated
+support/
+results/
+policies/
+*.tar.gz
+ra-content.zip
+__pycache__/
+.pytest_cache/
+.venv/

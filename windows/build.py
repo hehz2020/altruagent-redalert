@@ -111,7 +111,7 @@ def main() -> None:
         archive.write(release / "build-info.json", "build-info.json")
         archive.write(release / "self-test.json", "self-test.json")
         for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "SOURCES.md",
-                     "BENCHMARK.md", "BENCHMARK_RESULTS.json", "VALIDATION_V24.md"):
+                     "BENCHMARK.md", "BENCHMARK_RESULTS.json", "VALIDATION_V24.md", "VALIDATION_V25.md"):
             path = ROOT / name
             if path.is_file():
                 archive.write(path, name)

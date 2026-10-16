@@ -60,7 +60,7 @@ class MacroMap:
         start = pos(start)
         if start in self._paths:
             return self._paths[start]
-        if start is None or not self.resources:
+        if start is None or self.origin is None or not self.rows:
             return {}
         candidates = [(start[0] + x, start[1] + y) for y in range(-3, 4) for x in range(-3, 4)]
         candidates = [p for p in candidates if self.clear(p)]
@@ -79,6 +79,19 @@ class MacroMap:
             self._paths.clear()
         self._paths[start] = result
         return result
+
+    def approachable(self, start, target, radius):
+        if self.origin is None or not self.rows:
+            return True
+        paths = self.distances(start)
+        point = pos(target)
+        if point is None or not paths:
+            return False
+        reach = int(radius)
+        return any((point[0] + dx, point[1] + dy) in paths
+                   and dx * dx + dy * dy <= radius * radius
+                   for dx in range(-reach, reach + 1)
+                   for dy in range(-reach, reach + 1))
 
     def expansion(self, view, blocked=()):
         anchors = [pos(b) for b in view.buildings if b.get("type") in {"fact", "proc"} and pos(b)]

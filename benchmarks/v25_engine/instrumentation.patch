@@ -1,0 +1,39 @@
+--- a/OpenRA.Game/World.cs
++++ b/OpenRA.Game/World.cs
+@@ -207,7 +207,9 @@
+ 			Timestep = ReplayTimestep = GameSpeed.Timestep;
+ 
+ 			SharedRandom = new MersenneTwister(orderManager.LobbyInfo.GlobalSettings.RandomSeed);
+-			LocalRandom = new MersenneTwister();
++			LocalRandom = Environment.GetEnvironmentVariable("ALTRU_BENCH_SEEDED_LOCAL") == "1"
++				? new MersenneTwister(orderManager.LobbyInfo.GlobalSettings.RandomSeed)
++				: new MersenneTwister();
+ 
+ 			var worldActorType = type == WorldType.Editor ? SystemActors.EditorWorld : SystemActors.World;
+ 			WorldActor = CreateActor(worldActorType.ToString(), []);
+--- a/OpenRA.Mods.Common/Traits/Player/ObservationSerializer.cs
++++ b/OpenRA.Mods.Common/Traits/Player/ObservationSerializer.cs
+@@ -63,10 +63,10 @@
+ 				Economy = SerializeEconomy(),
+ 				Military = SerializeMilitary(),
+ 				MapInfo = SerializeMapInfo(),
+-				Done = world.IsGameOver,
++				Done = world.IsGameOver || player.WinState != WinState.Undefined,
+ 			};
+ 
+-			if (world.IsGameOver)
++			if (world.IsGameOver || player.WinState != WinState.Undefined)
+ 			{
+ 				obs.Result = player.WinState == WinState.Won ? "win"
+ 					: player.WinState == WinState.Lost ? "lose"
+--- a/OpenRA.Game/Traits/World/ScreenMap.cs
++++ b/OpenRA.Game/Traits/World/ScreenMap.cs
+@@ -107,6 +107,8 @@
+ 
+ 		public void Add(IEffect effect, WPos position, Size size)
+ 		{
++			if (worldRenderer == null)
++				return;
+ 			var screenPos = worldRenderer.ScreenPxPosition(position);
+ 			var screenWidth = Math.Abs(size.Width);
+ 			var screenHeight = Math.Abs(size.Height);

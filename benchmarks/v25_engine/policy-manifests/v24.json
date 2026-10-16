@@ -1,0 +1,21 @@
+{
+  "label": "released_v24",
+  "upstream_commit": "e264fce0d48da86110c896cf39a720fdc52b02ba",
+  "hash_rule": "sha256 of compact sorted JSON mapping relative .py path to SHA256",
+  "policy_hash": "4fa385f213af9789700e8532620b7ecbcd0670b556326deeb5f935216c59c284",
+  "files": {
+    "altru_redalert/__init__.py": "15f960c4b359cd640a3607efb926efe5085927580ae5bea55fe99771bc2da9d0",
+    "altru_redalert/adapter.py": "14789929eb300a94954a405809196d88ca938218d6d99acd63fb5eb4d01d9e15",
+    "altru_redalert/combat.py": "ee9c508560ceb274cbf0429b0c3374840ae8ea8cf4b2f72f99398ddbcec6d455",
+    "altru_redalert/core.py": "b5313ea016bf3b2a5578bc210702f3eab85d75f6093851bf82b48090c73461d7",
+    "altru_redalert/economy.py": "e23b759ec7ea28eccf25981d9d566ab1e5f519c258717fcb52501043c880b770",
+    "altru_redalert/flanking.py": "15e074da976f5d3c6b3c7f32f87402e651afda687ee848e19bab5a017b55670e",
+    "altru_redalert/ground_routes.py": "54e6368b74460de14fa7fea7f5a8a074d2cca956c4b0bde4a6dd333723a058ba",
+    "altru_redalert/inspect_log.py": "9f8968fbf0745bc5fab517771ee1d0ffd4024ecc55cee11cf0edfb8fff94a713",
+    "altru_redalert/macro_map.py": "311dfa792c0f071c16446deed6d512d8cae25c6af8b0694309bf9e0c7dd3d2b9",
+    "altru_redalert/mining.py": "0b3b7985977370b6c8bd356f847e8b281b3f6e23e3d320b80164e30582fb659e",
+    "altru_redalert/model.py": "9aa17c91cb8d64558b544b1480006a0f6dc9fc1e4b82935a744ef70349e85e09",
+    "altru_redalert/tactics.py": "3936ef904352d08dcaf12a0052f39a6228838af023cefb9bbae3ff954cd0e860"
+  },
+  "full_source_hash_including_sdk": "2ee99d104c50132a354d9fe32905a47058b0e56bd1208b7c24de1b90b0c6ed67"
+}

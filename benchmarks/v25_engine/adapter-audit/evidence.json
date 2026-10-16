@@ -1,0 +1,32 @@
+{
+  "notice": "Before version is reconstructed by reversing the exact final apply_patch; it is not a preserved independent pre-run snapshot. Tool-call history records that patch. Existing adapter and result files were not edited.",
+  "current_adapter_sha256": "bf126ce2f324a7e95b91100a3e9d3e596d8dc0a92b757c48dc26e112b042c1dd",
+  "reconstructed_before_report_sha256": "5b32221fbf2f410c3708bf303885b0b47939b3c6fcfcefa385b378bade8253af",
+  "adapter_last_modified_utc": "2026-10-16T06:05:16.756031+00:00",
+  "last_behavior_change_upper_bound_utc": "2026-10-16T06:02:35.943759+00:00",
+  "baseline_dev1_metadata_time_utc": "2026-10-16T06:04:34.107887+00:00",
+  "unchanged_ast_nodes": {
+    "StaticData": true,
+    "SeatAdapter": true,
+    "Bridge": true,
+    "mini": true,
+    "merge": true,
+    "value": true,
+    "ints": true,
+    "traits": true,
+    "trait": true,
+    "cell_range": true
+  },
+  "last_patch_description": [
+    "Added standalone policy_hash function reading local altru_redalert source files.",
+    "Added source_hash = policy_hash(args.repo) before import/engine run.",
+    "Added policy_source_sha256 and source_unchanged_during_run report keys after the decision loop."
+  ],
+  "previous_patch_description": [
+    "Normalize map parameter to Path(map_name).stem.lower().",
+    "Omit inferred reload_seconds from public reconstructed catalog to avoid false Tesla firing rate.",
+    "Add own-actor and visible-target validation before command conversion.",
+    "Add --session-id and forward it to GetState/FastAdvance."
+  ],
+  "previous_patch_timing_limit": "Exact write timestamp for the previous patch was overwritten by the final reporting patch; tests created/run before baseline provide only an upper bound."
+}

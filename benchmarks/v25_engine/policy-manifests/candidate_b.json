@@ -1,0 +1,20 @@
+{
+  "label": "candidate_b",
+  "frozen_utc": "2026-10-16T06:12:28.897539+00:00",
+  "change": "candidate_a with reachable sweep tie-break restored to v24 behavior",
+  "policy_hash": "61f8595c967c8385f6b436e33084e69debe3f79b301e74a90740645ac9426994",
+  "files": {
+    "altru_redalert/__init__.py": "0b32fbb1757752a9d3f5487c6a1f4183bd5f81acaac220ec68fadea15e866e06",
+    "altru_redalert/adapter.py": "14789929eb300a94954a405809196d88ca938218d6d99acd63fb5eb4d01d9e15",
+    "altru_redalert/combat.py": "6cee8f65816f1786c04f4d99cc01465341466f445aaeab376de652db791c83ac",
+    "altru_redalert/core.py": "3c1d929071c4a228ddce416a2fe923c0444c567fd3186cf33798824fe433b4cc",
+    "altru_redalert/economy.py": "a925ce9a159a2ca3dde24fc4bc82b08dc7f2dc70022940e88dfdc2288693b470",
+    "altru_redalert/flanking.py": "15e074da976f5d3c6b3c7f32f87402e651afda687ee848e19bab5a017b55670e",
+    "altru_redalert/ground_routes.py": "54e6368b74460de14fa7fea7f5a8a074d2cca956c4b0bde4a6dd333723a058ba",
+    "altru_redalert/inspect_log.py": "9f8968fbf0745bc5fab517771ee1d0ffd4024ecc55cee11cf0edfb8fff94a713",
+    "altru_redalert/macro_map.py": "0dd33ac5b3b8cbf5f645947205d777943c606206639ccadd7fe47e3ba2a59dd5",
+    "altru_redalert/mining.py": "f33b57594f8489d180742b57ed3a8a7194a73af284904f89b80260549c1cf0e0",
+    "altru_redalert/model.py": "fdc4a4ce6cd33f2ea1b05e955cc45c488b277cfb6ecd415dabf862b5691eee5a",
+    "altru_redalert/tactics.py": "5abe020b26246df1909649510e56403c45027520eb0aa991937c7662ac939769"
+  }
+}

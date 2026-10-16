@@ -102,6 +102,13 @@ def weapons(view, actor):
     k = kind(actor)
     observed = view.spec(k).get('weapon')
     observed = observed if isinstance(observed, dict) else {}
+    cache_key = (k, str(observed.get('weapon', '')),
+                 number(observed.get('range_cells'), None),
+                 number(observed.get('damage'), None),
+                 number(observed.get('reload_seconds'), None))
+    cached = view._weapon_profiles.get(cache_key)
+    if cached is not None:
+        return cached
     profiles = PROFILES.get(k, ())
     if not profiles and number(observed.get('damage')) > 0:
         profiles = (Weapon(str(observed.get('weapon', 'unknown')),
@@ -115,7 +122,9 @@ def weapons(view, actor):
             max(0., number(observed.get('damage'), w.damage)) if matches else w.damage,
             max(.08, number(observed.get('reload_seconds'), w.reload)) if matches else w.reload,
             w.versus, w.burst, w.minimum, w.domain, w.splash, w.accuracy))
-    return tuple(result)
+    result = tuple(result)
+    view._weapon_profiles[cache_key] = result
+    return result
 
 
 def weapon_range(view, attacker, target=None):

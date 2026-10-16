@@ -1,0 +1,364 @@
+{
+  "record_count": 80,
+  "unchanged_phase1_record_count": 49,
+  "stage2_paired_count": 16,
+  "selected_policy": "candidate_f",
+  "shared_source_matches_selected": true,
+  "all_record_and_trace_hashes_verified": true,
+  "stage2_selection_precedes_all_reserved_metadata": true,
+  "phase1_condition7_reused_only_as_stage2_development": true,
+  "summary_transitions_and_subgroups_verified": true,
+  "stage2_transitions": {
+    "W \u2192 C": [
+      "1",
+      "5"
+    ],
+    "W \u2192 W": [
+      "2"
+    ],
+    "C \u2192 W": [
+      "3",
+      "4"
+    ],
+    "C \u2192 C": [
+      "6"
+    ],
+    "L \u2192 W": [
+      "7"
+    ],
+    "L \u2192 C": [
+      "8"
+    ]
+  },
+  "stage2_subgroups": [
+    {
+      "dimension": "map",
+      "group": "shadowfiend-ii",
+      "v24_wlc": "0/2/0",
+      "candidate_wlc": "1/0/1"
+    },
+    {
+      "dimension": "map",
+      "group": "sidestep",
+      "v24_wlc": "2/0/1",
+      "candidate_wlc": "2/0/1"
+    },
+    {
+      "dimension": "map",
+      "group": "trapped",
+      "v24_wlc": "1/0/2",
+      "candidate_wlc": "1/0/2"
+    },
+    {
+      "dimension": "own_faction",
+      "group": "england",
+      "v24_wlc": "2/1/1",
+      "candidate_wlc": "2/0/2"
+    },
+    {
+      "dimension": "own_faction",
+      "group": "russia",
+      "v24_wlc": "1/1/2",
+      "candidate_wlc": "2/0/2"
+    },
+    {
+      "dimension": "opponent",
+      "group": "normal",
+      "v24_wlc": "1/1/2",
+      "candidate_wlc": "1/0/3"
+    },
+    {
+      "dimension": "opponent",
+      "group": "rush",
+      "v24_wlc": "2/1/1",
+      "candidate_wlc": "3/0/1"
+    },
+    {
+      "dimension": "own_side",
+      "group": "Multi0",
+      "v24_wlc": "2/1/1",
+      "candidate_wlc": "2/0/2"
+    },
+    {
+      "dimension": "own_side",
+      "group": "Multi1",
+      "v24_wlc": "1/1/2",
+      "candidate_wlc": "2/0/2"
+    }
+  ],
+  "missing_runtime_hashes_explicitly_expected": [
+    [
+      "candidate_a",
+      "v25_development_1"
+    ],
+    [
+      "candidate_a",
+      "v25_development_2"
+    ],
+    [
+      "released_v24",
+      "v25_development_1"
+    ],
+    [
+      "released_v24",
+      "v25_development_2"
+    ]
+  ],
+  "outcomes": [
+    {
+      "phase": "development",
+      "label": "ablation_old_combat",
+      "outcome": "censored",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_combat",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_defense",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_defense",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_economy",
+      "outcome": "lose",
+      "count": 2
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_goal",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_goal",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "ablation_old_goal_defense",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_a",
+      "outcome": "lose",
+      "count": 3
+    },
+    {
+      "phase": "development",
+      "label": "candidate_a",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_b",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_b",
+      "outcome": "win",
+      "count": 3
+    },
+    {
+      "phase": "development",
+      "label": "candidate_c",
+      "outcome": "censored",
+      "count": 2
+    },
+    {
+      "phase": "development",
+      "label": "candidate_c",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_c",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_d",
+      "outcome": "censored",
+      "count": 2
+    },
+    {
+      "phase": "development",
+      "label": "candidate_d",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_d",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_e",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_e",
+      "outcome": "win",
+      "count": 3
+    },
+    {
+      "phase": "development",
+      "label": "candidate_f",
+      "outcome": "lose",
+      "count": 1
+    },
+    {
+      "phase": "development",
+      "label": "candidate_f",
+      "outcome": "win",
+      "count": 3
+    },
+    {
+      "phase": "development",
+      "label": "released_v24",
+      "outcome": "censored",
+      "count": 2
+    },
+    {
+      "phase": "development",
+      "label": "released_v24",
+      "outcome": "win",
+      "count": 2
+    },
+    {
+      "phase": "held_out",
+      "label": "candidate_b",
+      "outcome": "censored",
+      "count": 7
+    },
+    {
+      "phase": "held_out",
+      "label": "candidate_b",
+      "outcome": "lose",
+      "count": 4
+    },
+    {
+      "phase": "held_out",
+      "label": "candidate_b",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "held_out",
+      "label": "released_v24",
+      "outcome": "censored",
+      "count": 3
+    },
+    {
+      "phase": "held_out",
+      "label": "released_v24",
+      "outcome": "lose",
+      "count": 5
+    },
+    {
+      "phase": "held_out",
+      "label": "released_v24",
+      "outcome": "win",
+      "count": 4
+    },
+    {
+      "phase": "stage2_development",
+      "label": "candidate_d",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "stage2_development",
+      "label": "candidate_e",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "stage2_development",
+      "label": "candidate_f",
+      "outcome": "win",
+      "count": 1
+    },
+    {
+      "phase": "stage2_held_out",
+      "label": "candidate_f",
+      "outcome": "censored",
+      "count": 4
+    },
+    {
+      "phase": "stage2_held_out",
+      "label": "candidate_f",
+      "outcome": "win",
+      "count": 4
+    },
+    {
+      "phase": "stage2_held_out",
+      "label": "released_v24",
+      "outcome": "censored",
+      "count": 3
+    },
+    {
+      "phase": "stage2_held_out",
+      "label": "released_v24",
+      "outcome": "lose",
+      "count": 2
+    },
+    {
+      "phase": "stage2_held_out",
+      "label": "released_v24",
+      "outcome": "win",
+      "count": 3
+    }
+  ],
+  "reviewed_utc": "2026-10-16T07:16:05.198387+00:00",
+  "frozen_policy_stream_sha256": "6e6d52b080ae3ce9fea6d8e4660e5adf70dbcd367b2d5510b0a6e1652cb6db2d",
+  "reproduction_check": "Frozen v2.4 source plus published candidate_f.patch reconstructed all 12 policy files with exact manifest hashes in a clean temporary directory.",
+  "diagnostic_checks": {
+    "all_16_report_fields_and_trace_hashes_match": true,
+    "independent_harvester_full_trace_samples": [
+      "candidate_f/v25_stage2_held_out_1",
+      "candidate_f/v25_stage2_held_out_3",
+      "released_v24/v25_stage2_held_out_7"
+    ],
+    "scope": "Harvester time-series fields independently recomputed for these three samples only; not a full independent recomputation of all sixteen diagnostic time series.",
+    "original_trace_digest_verification_enabled": true
+  },
+  "remaining_limits": [
+    "Eight new paired conditions are a small fixed local-engine sample, not an official platform win-rate estimate.",
+    "Four candidate matches remain censored; two baseline wins become censored and the original development_4 regression remains.",
+    "Adapter uses reconstructed public static configuration/events and no faithful delayed per-command acknowledgement or live platform latency.",
+    "Four early first-stage runs lack runtime hashes; their retrospective provenance is explicitly documented.",
+    "Final Windows executable build and runtime checks are outside this source/evaluation audit."
+  ],
+  "reviewed_document_sha256": {
+    "SUMMARY.md": "eaa678766c489ab81a83477599d34f5221a16bf75dd36651133217dc709c5c7e",
+    "README.md": "82c7052fdd9748a368e5a6ea927fc09b1f63bdd03a759414d726b7f66a2423f0",
+    "ADAPTER_CALIBRATION.md": "7988a7723d3b1f4b6d5beda5463654c63519950cf962f51ddbe2801bb964a796",
+    "DIAGNOSTICS_STAGE2.md": "6af7c4d5c8b4452c8b91786035f8be1c6fee4cf08963a1abab4badb3721a9d8d",
+    "stage2-diagnostics.json": "08418be8a2489373c335b6085f61e173df2a59b3b1ee0dc49b8429131d48d10a"
+  }
+}

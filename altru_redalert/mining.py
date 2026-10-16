@@ -9,6 +9,49 @@ class MiningManager:
     def __init__(self):
         self.units = {}
         self._map = None
+        self._offered = {}
+        self._issued = {}
+
+    def _signature(self, order):
+        return order.get("cmd"), tuple(order["to"]) if "to" in order else None
+
+    def _offer(self, uid, order, now, **changes):
+        state = self.units[uid]
+        before = {key: (key in state, state.get(key)) for key in changes}
+        state.update(changes)
+        self._offered[uid] = (self._signature(order), now, before)
+
+    def _restore(self, uid, before):
+        state = self.units.get(uid)
+        if state is None:
+            return
+        for key, (present, value) in before.items():
+            if present:
+                state[key] = value
+            else:
+                state.pop(key, None)
+
+    def mark_sent(self, orders, now):
+        sent = {(uid, self._signature(order)) for order in orders
+                for uid in order.get("units", [])}
+        for uid, (signature, proposed_at, before) in self._offered.items():
+            if proposed_at != now:
+                continue
+            if (uid, signature) in sent:
+                self._issued[uid] = (signature, now, before)
+            else:
+                self._restore(uid, before)
+        self._offered.clear()
+
+    def mark_failed(self, order, sent_at):
+        signature = self._signature(order)
+        for uid in order.get("units", []):
+            issued = self._issued.get(uid)
+            state = self.units.get(uid)
+            if (issued and issued[:2] == (signature, sent_at)
+                    and state and state.get("command_at") == sent_at):
+                self._restore(uid, issued[2])
+                self._issued.pop(uid, None)
 
     def _risk(self, v, unit, point, threats, cover, horizon=8):
         target = {**unit, "x": point[0], "y": point[1]}
@@ -102,7 +145,7 @@ class MiningManager:
 
     def _ore(self, v, unit, threats, cover, refs, reserved, delivery_limit=28):
         if not refs or not self._map.resources:
-            return None
+            return None, False
         paths = self._map.distances(pos(unit))
         refinery_paths = [self._map.distances(pos(ref)) for ref in refs]
         candidates = []
@@ -114,6 +157,7 @@ class MiningManager:
             crowding = sum(max(0., 4 - distance(point, used)) for used in reserved)
             candidates.append((outbound + inbound * 1.8 + crowding * 3, point))
         cells = set()
+        blocked = False
         for _, point in sorted(candidates):
             cell = (point[0] // 3, point[1] // 3)
             if cell in cells:
@@ -124,14 +168,16 @@ class MiningManager:
             route = self._path(pos(unit), point, paths)
             if any(self._risk(v, unit, p, threats, cover) >= .18
                    for p in route[::2] + [point]):
+                blocked = True
                 continue
             ref_index = min(range(len(refs)), key=lambda i: refinery_paths[i].get(point, 10000))
             delivery = self._path(pos(refs[ref_index]), point, refinery_paths[ref_index])
             if any(self._risk(v, unit, p, threats, cover) >= .18
                    for p in delivery[::2] + [point]):
+                blocked = True
                 continue
-            return list(point)
-        return None
+            return list(point), False
+        return None, blocked
 
     def _delivering(self, unit, refs):
         activity = str(unit.get("act", unit.get("activity", unit.get("state", "")))).lower()
@@ -144,15 +190,22 @@ class MiningManager:
 
     def propose(self, v, macro_map):
         self._map = macro_map
+        self._offered = {}
         harvesters = [u for u in v.units if u.get("type") == "harv" and pos(u)]
         live = {u["id"] for u in harvesters}
         self.units = {uid: state for uid, state in self.units.items()
                       if uid in live and state["seen"] <= v.now}
+        self._issued = {uid: issued for uid, issued in self._issued.items()
+                        if uid in self.units and issued[1] <= v.now}
         refs = [b for b in v.buildings if b.get("type") == "proc" and pos(b)]
         threats = [e for e in v.enemies + v.enemy_buildings if pos(e) and weapons(v, e)]
         cover = [a for a in v.units + v.buildings if pos(a) and weapons(v, a)]
         reserved = [state["target"] for state in self.units.values()
                     if state.get("target") and v.now - state.get("restored_at", 0) < 20]
+        reserved += [pos(u) for u in harvesters if not u.get("idle")
+                     and not self._delivering(u, refs)
+                     and any((pos(u)[0] + dx, pos(u)[1] + dy) in self._map.resources
+                             for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
         orders = []
         for unit in harvesters:
             uid, hp = unit["id"], number(unit.get("hp"), 100)
@@ -172,8 +225,9 @@ class MiningManager:
                 if v.now - state["command_at"] >= 4:
                     target = self._refuge(v, unit, threats, cover, refs, risk)
                     if target:
-                        state.update(command_at=v.now, escape_target=target)
-                        orders.append(Intent({"cmd": "move", "units": [uid], "to": target},
+                        order = {"cmd": "move", "units": [uid], "to": target}
+                        self._offer(uid, order, v.now, command_at=v.now, escape_target=target)
+                        orders.append(Intent(order,
                                              priority=97, cooldown=4, key=f"harv-escape:{uid}"))
                 continue
             restoring = state["retreat"]
@@ -203,8 +257,12 @@ class MiningManager:
                 continue
             recent = v.now - state.get("restored_at", -100) < 60
             exhausted = recent and state["restore_tries"] >= 2
-            target = None if exhausted else self._ore(
-                v, unit, threats, cover, refs, reserved, 18 if outward else 28)
+            target, blocked = self._ore(v, unit, threats, cover, refs, reserved,
+                                        18 if outward else 28)
+            if blocked:
+                continue
+            if exhausted:
+                target = None
             if outward and target is None:
                 continue
             if target is None and threats and self._map.resources:
@@ -217,11 +275,12 @@ class MiningManager:
             if target:
                 order["to"] = target
                 reserved.append(target)
-            state.update(retreat=False, command_at=v.now, target=target,
-                         restored_at=v.now, restore_tries=state["restore_tries"] + 1 if recent else 1)
-            state.pop("escape_target", None)
+            changes = dict(retreat=False, command_at=v.now, target=target,
+                           restored_at=v.now, restore_tries=state["restore_tries"] + 1 if recent else 1,
+                           escape_target=None)
             if outward:
-                state["far_redirected"] = True
+                changes["far_redirected"] = True
+            self._offer(uid, order, v.now, **changes)
             orders.append(Intent(order, priority=84 if restoring else 82,
                                  cooldown=4, key=f"harvest:{uid}"))
         return orders

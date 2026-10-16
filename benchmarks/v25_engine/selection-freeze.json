@@ -1,0 +1,17 @@
+{
+  "selected_utc": "2026-10-16T06:30:50.397561+00:00",
+  "candidate": "candidate_b",
+  "baseline": "released_v24",
+  "selection_basis": "Development comparison A=1W/3L, B=3W/1L, C=1W/1L/2censored; B selected before held-out results. C also showed a lone-guard scouting regression. No claim that this explains all result differences.",
+  "known_development_regression": "development_4: released_v24 win1130.08s vs candidate_b lose1013.92s; single old_goal or old_defense ablations did not restore win, joint ablation did. No further tuning to this seed.",
+  "manifest_json_sha256": "61f8595c967c8385f6b436e33084e69debe3f79b301e74a90740645ac9426994",
+  "manifest_file_sha256": "a6754c817c9b17ec2ec9371f432aa8da2a157ed3f151ed9dec7f0a51756fb781",
+  "adapter_policy_source_stream_sha256": "97b8c9ba203cab6e1d919739adb20572d5989e54b7c76df1da1a3fbc7477c683",
+  "adapter_sha256": "bf126ce2f324a7e95b91100a3e9d3e596d8dc0a92b757c48dc26e112b042c1dd",
+  "conditions_sha256": "cee9413023d79b2981b0673a5d055fea8e687c776132e57c6c86a1b155a21ec9",
+  "heldout_declaration_sha256": "b7975bfdba93827ecb513aef67e4af2017f98b323db42110798454501efc2673",
+  "workers": 4,
+  "heldout_result_files_at_selection": [],
+  "strategy_updates_after_selection": "None permitted from held-out outcomes.",
+  "final_worktree_matches_frozen_candidate": true
+}

@@ -1,0 +1,37 @@
+--- adapter_before_report_reconstructed.py
++++ adapter_after_report_snapshot.py
+@@ -379,6 +379,17 @@
+         self.advance = self.channel.unary_unary('/openra.rl.RLBridge/FastAdvance', request_serializer=pb.FastAdvanceRequest.SerializeToString, response_deserializer=pb.GameObservation.FromString)
+ 
+ 
++def policy_hash(repo):
++    root = Path(repo) / 'altru_redalert'
++    digest = hashlib.sha256()
++    for path in sorted(root.rglob('*.py')):
++        digest.update(str(path.relative_to(root)).encode())
++        digest.update(b'\0')
++        digest.update(path.read_bytes())
++        digest.update(b'\0')
++    return digest.hexdigest()
++
++
+ def main():
+     parser = argparse.ArgumentParser()
+     parser.add_argument('--repo', required=True)
+@@ -393,6 +404,7 @@
+     parser.add_argument('--output', required=True)
+     parser.add_argument('--trace')
+     args = parser.parse_args()
++    source_hash = policy_hash(args.repo)
+     sys.path.insert(0, str(Path(args.repo).resolve()))
+     Controller = importlib.import_module('altru_redalert.core').Controller
+     static = StaticData(args.engine, args.map)
+@@ -429,6 +441,8 @@
+         report = {'result':obs.result, 'engine_done':obs.done, 'tick':obs.tick, 'seconds':obs.tick/25,
+                   'elapsed_s':time.monotonic()-started, 'faction':adapter.faction,'enemy_faction':adapter.enemy_faction,
+                   'policy_version':importlib.import_module('altru_redalert').__version__,
++                  'policy_source_sha256':source_hash,
++                  'source_unchanged_during_run':source_hash == policy_hash(args.repo),
+                   'map':args.map,'military':raw['observation']['military'], 'economy':raw['observation']['economy'],
+                   'samples':samples,'orders':dict(decisions),'controller_stats':dict(controller.stats),
+                   'map_diagnostics':static.map_diagnostics}

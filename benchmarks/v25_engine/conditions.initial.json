@@ -1,0 +1,111 @@
+{
+  "declared_utc": "2026-10-16T05:58:54.064681+00:00",
+  "conditions": [
+    {
+      "id": "v25_development_1",
+      "phase": "development",
+      "seed": 2501,
+      "map": "sidestep",
+      "own_side": "Multi0",
+      "own_faction": "russia",
+      "enemy_faction": "england",
+      "opponent": "normal",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_development_1.oramap"
+    },
+    {
+      "id": "v25_development_2",
+      "phase": "development",
+      "seed": 2502,
+      "map": "trapped",
+      "own_side": "Multi1",
+      "own_faction": "england",
+      "enemy_faction": "russia",
+      "opponent": "rush",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_development_2.oramap"
+    },
+    {
+      "id": "v25_development_3",
+      "phase": "development",
+      "seed": 2503,
+      "map": "sidestep",
+      "own_side": "Multi1",
+      "own_faction": "england",
+      "enemy_faction": "russia",
+      "opponent": "normal",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_development_3.oramap"
+    },
+    {
+      "id": "v25_development_4",
+      "phase": "development",
+      "seed": 2504,
+      "map": "trapped",
+      "own_side": "Multi0",
+      "own_faction": "russia",
+      "enemy_faction": "england",
+      "opponent": "rush",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_development_4.oramap"
+    },
+    {
+      "id": "v25_held_out_1",
+      "phase": "held_out",
+      "seed": 3501,
+      "map": "sidestep",
+      "own_side": "Multi0",
+      "own_faction": "russia",
+      "enemy_faction": "england",
+      "opponent": "normal",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_held_out_1.oramap"
+    },
+    {
+      "id": "v25_held_out_2",
+      "phase": "held_out",
+      "seed": 3502,
+      "map": "trapped",
+      "own_side": "Multi1",
+      "own_faction": "england",
+      "enemy_faction": "russia",
+      "opponent": "rush",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_held_out_2.oramap"
+    },
+    {
+      "id": "v25_held_out_3",
+      "phase": "held_out",
+      "seed": 3503,
+      "map": "sidestep",
+      "own_side": "Multi1",
+      "own_faction": "england",
+      "enemy_faction": "russia",
+      "opponent": "normal",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_held_out_3.oramap"
+    },
+    {
+      "id": "v25_held_out_4",
+      "phase": "held_out",
+      "seed": 3504,
+      "map": "trapped",
+      "own_side": "Multi0",
+      "own_faction": "russia",
+      "enemy_faction": "england",
+      "opponent": "rush",
+      "seconds_limit": 1200,
+      "tick_step": 5,
+      "frozen_map": "v25_held_out_4.oramap"
+    }
+  ],
+  "selection": "Development may inform repairs. Freeze candidate before held_out results. No outcome pooling. Censored at 1200 simulated seconds when own WinState remains undefined. No platform scoring claims.",
+  "calibration": "Own-seat visible observations only; immutable map/rules public data. Local gRPC has no network leases/latency, platform observation truncation, or faithful command acknowledgement."
+}

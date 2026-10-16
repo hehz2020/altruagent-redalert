@@ -1,11 +1,11 @@
-# AltruAgent 红警 bot v2.4
+# AltruAgent 红警 bot v2.5
 
 这是基于 Spearhead AI 的公开思想、针对平台接口独立实现的传统程序 bot。红警决策不用 LLM，也不需要 OpenAI API Key。它不是把原版 Spearhead 的引擎插件直接装进平台，而是使用平台允许的观察和指令重新实现经济、侦察和作战逻辑。来源见 [SOURCES.md](SOURCES.md)。
 
 ## Windows 使用
 
 1. 使用交付的 Windows ZIP；发布后也可从 [Releases](https://github.com/hehz2020/altruagent-redalert/releases/latest) 下载。将整个包解压到一个文件夹。
-2. 等当前对局结束后关闭旧 bot，再双击 `AltruAgentRedAlert.exe`，不需要安装 Python。新窗口首行应显示 **Bot v2.4**；下载文件不会自动替换已经运行的旧程序。
+2. 等当前对局结束后关闭旧 bot，再双击 `AltruAgentRedAlert.exe`，不需要安装 Python。新窗口首行应显示 **Bot v2.5**；下载文件不会自动替换已经运行的旧程序。
 3. 输入 `1` 接测试局；输入 `2` 接正式比赛；输入 `3` 同时接两类。输入 `4` 只检查连接。
 4. 粘贴自己的 Official Agent Key，回车。隐藏输入时看不到字符是正常现象。
 5. 保持窗口打开、电脑联网并且不休眠。同一账号只启动一个程序。
@@ -16,11 +16,11 @@ Key 不在程序包中，现场输入的 Key 不写入磁盘。已有私密 `.en
 
 ## 这一版的改动
 
-v2.4 改进矿区保护、受袭后的采矿恢复、侧翼路线及持续进攻判断。验证情况见 [VALIDATION_V24.md](VALIDATION_V24.md)。
+v2.5 改进威胁反制、攻城生产、多处护矿、目标选择、搜索收尾和指令失败恢复。验证情况见 [VALIDATION_V25.md](VALIDATION_V25.md)。v2.4 的验证保留在 [VALIDATION_V24.md](VALIDATION_V24.md)。
 
 ## 历史版本
 
-以下为 v2.3 的本地引擎对照结果，不代表 v2.4 的比赛胜率：
+以下为 v2.3 的本地引擎对照结果，不代表当前版本的比赛胜率：
 
 - 双矿厂开局，提前补矿车、维修厂和坦克，持续发展装甲部队，避免不断造廉价兵车却攒不出坦克。
 - 开局主动出击先集齐三辆坦克；守家和近处交战仍及时响应，等待也有时间上限。

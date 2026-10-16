@@ -38,6 +38,8 @@ def pos(actor: Any) -> tuple[int, int] | None:
         pair = actor
     else:
         return None
+    if type(pair[0]) is int and type(pair[1]) is int:
+        return pair[0], pair[1]
     if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not isfinite(v) for v in pair):
         return None
     return int(pair[0]), int(pair[1])
@@ -141,6 +143,7 @@ class View:
         remaining = _dict(self.raw.get("time")).get("remaining_seconds")
         self.remaining = max(0, number(remaining)) if remaining is not None else inf
         self.military = _dict(self.obs.get("military"))
+        self._weapon_profiles = {}
 
     def spec(self, item: str) -> dict:
         return self.catalog.get(str(item).lower(), {})

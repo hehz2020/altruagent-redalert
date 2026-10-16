@@ -1,0 +1,24 @@
+{
+  "frozen_utc": "2026-10-16T06:06:36.703327+00:00",
+  "engine_commit": "9b271c1a5562a07deeb1c3f81d9a556cd563a676",
+  "files": {
+    "adapter.py": "bf126ce2f324a7e95b91100a3e9d3e596d8dc0a92b757c48dc26e112b042c1dd",
+    "case_runner.py": "a3f01760568b567c390422d8cafc403b41ff947b8d82aace0d66ce2ee10774d8",
+    "run_suite.py": "9673747f85c4a0330f715cdc20ea468b4efe7fbd999d26667a91743140223e63",
+    "instrumentation.patch": "b5fe25c61af5adb0ec619f1ff64d10dfdcab8eef62ebdbbe4418139b885b2080",
+    "conditions.json": "40505280ec9653c43f6f27461348d5c1f4a0beefb137d319c7e43c1c6923593f",
+    "OpenRA/bin/OpenRA.Game.dll": "4d64791fdfcab2f7d4171108a1d892b9c1aca1048c659e3e3b9001b8ab8a0caf",
+    "OpenRA/bin/OpenRA.Mods.Cnc.dll": "3f8ffdda9ebd6d128eccd7d8a4e073a7f0739325ed7d5c6928ec1638a6a98ab4",
+    "OpenRA/bin/OpenRA.Mods.Common.dll": "cd531e6127887ceb3e84d82bb45b28308731ab788579b28245d80994fda176b8",
+    "OpenRA/bin/OpenRA.Platforms.Null.dll": "ec9cddd823eac68cbfcde24a520b2a11ab8ab424bf2b207c647b56f90a2e27eb",
+    "OpenRA/bin/OpenRA.dll": "e1cd0b4054537b0a8d58fd11621d7472f52fe0fbdb59f4dd251290a5e9bf70ae",
+    "OpenRA/mods/ra/maps/v25_development_1.oramap": "54c442147782dbd43f5cce0290650fa92bf35da4761836ddc29d9e5717116e34",
+    "OpenRA/mods/ra/maps/v25_development_2.oramap": "26b455826f17ba1dbaf1e536f8df423c1dbcc2ecfbb1622ca239edfbf08856c2",
+    "OpenRA/mods/ra/maps/v25_development_3.oramap": "5707493a37b671040897c7da8000824ae2c51d2efab8bb3765f2511749686c5d",
+    "OpenRA/mods/ra/maps/v25_development_4.oramap": "2684024016ac4baaa84283be9d9aad5e13335b4e728890acd9b023a1f250f074",
+    "OpenRA/mods/ra/maps/v25_held_out_1.oramap": "3f6cf1cec3ffcc1d5a6afeb316fc4a8f5d34fbb9643ebf766452c483aed74ebc",
+    "OpenRA/mods/ra/maps/v25_held_out_2.oramap": "b8234dbc183bee9ee6ae2c0a4db5a25aad73315a0498d0c7183221ac98c61767",
+    "OpenRA/mods/ra/maps/v25_held_out_3.oramap": "c0e14de04a45c7a8a5292fa8ccd7d9c147e8eac8de44fb5f6dd6e36becc231df",
+    "OpenRA/mods/ra/maps/v25_held_out_4.oramap": "59d5e44c9c5abcc71afe90c0500c61b493e3ec4810a867364a3f40f5d4e023ef"
+  }
+}

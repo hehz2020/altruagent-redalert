@@ -96,6 +96,99 @@ class Economy:
         self._ore_pressure = {}
         self._defense_targets = {}
         self._defense_placement_attempts = {}
+        self._air_contacts = {}
+        self._static_contacts = {}
+
+    def _opposition(self, v):
+        self._air_contacts = {uid: entry for uid, entry in self._air_contacts.items()
+                              if 0 <= v.now - entry[1] < 35}
+        self._static_contacts = {uid: entry for uid, entry in self._static_contacts.items()
+                                 if 0 <= v.now - entry[1] < 75}
+        for enemy in v.enemies:
+            if enemy.get("type") in _AIR - {"tran"}:
+                self._air_contacts[enemy["id"]] = (dict(enemy), v.now)
+        for enemy in v.enemy_buildings:
+            if enemy.get("type") in _DEFENSES and any(w.domain == "ground" for w in weapons(v, enemy)):
+                self._static_contacts[enemy["id"]] = (dict(enemy), v.now)
+            else:
+                self._static_contacts.pop(enemy["id"], None)
+        return ([entry[0] for entry in self._air_contacts.values()],
+                [entry[0] for entry in self._static_contacts.values()])
+
+    def _response(self, v, near, aircraft, budget):
+        anchors = [pos(b) for b in v.buildings if b.get("type") in {"fact", "proc", "weap"} and pos(b)]
+        local = [u for u in v.units + v.buildings if pos(u)
+                 and any(distance(pos(u), anchor) <= 22 for anchor in anchors)]
+        armored = [e for e in near if e.get("type") in _VEHICLES]
+        infantry = [e for e in near if str(e.get("type", "")).startswith("e")]
+        aa_target = max(1.5, min(5, len(aircraft))) if aircraft else 0
+        aa_strength = 0
+        if aircraft:
+            local_air = [enemy for enemy in aircraft if pos(enemy)
+                         and any(distance(pos(enemy), anchor) <= 24 for anchor in anchors)]
+            targets = local_air or aircraft
+            for unit in v.units:
+                if local_air and not any(distance(pos(unit), pos(enemy)) <= 30 for enemy in local_air):
+                    continue
+                aa_strength += (sum(damage_rate(v, unit, enemy) for enemy in targets)
+                                / len(targets) / 3000 * min(1., _number(unit.get("hp"), 100) / 100))
+            for item in ("ftrk", "e3", "4tnk"):
+                incoming = max(0, v.total(item) - v.count(item))
+                aa_strength += incoming * sum(damage_rate(v, {"type": item}, enemy)
+                                              for enemy in targets) / len(targets) / 3000
+            aa_strength += sum(
+                min(2., sum(damage_rate(v, tower, enemy,
+                                       at_distance=distance(pos(tower), pos(enemy)))
+                            for enemy in aircraft) / 3000)
+                for tower in v.buildings if tower.get("type") in {"agun", "sam"})
+        aa_need = aa_strength < aa_target
+        armor_need = len(armored) >= 2 and sum(
+            sum(damage_rate(v, unit, enemy) for enemy in armored) / len(armored)
+            for unit in local) < sum(health(v, enemy) for enemy in armored) / 22
+        infantry_need = len(infantry) >= 4 and sum(
+            sum(damage_rate(v, unit, enemy) for enemy in infantry) / len(infantry)
+            for unit in local) < sum(health(v, enemy) for enemy in infantry) / 12
+        if aa_need:
+            choices, soldier = ["ftrk", "4tnk"], "e3"
+        elif armor_need:
+            choices, soldier = ["3tnk", "2tnk", "1tnk"], "e3"
+        elif infantry_need:
+            choices, soldier = ["ftrk", "apc", "jeep", "1tnk"], "e1"
+        else:
+            return False, None, None
+        vehicle = next((item for item in choices if v.available(item, "train")
+                        and _cost(v, item) > 0 and budget >= _cost(v, item)
+                        and v.remaining > _build_time(v, item, "train") + 10), None)
+        if vehicle and v.queue_busy("Vehicle"):
+            vehicle = None
+        if (not v.available(soldier, "train") or v.queue_busy("Infantry")
+                or _cost(v, soldier) <= 0):
+            soldier = None
+        return True, vehicle, soldier
+
+    def _siege_response(self, v, defenses, budget, pressure):
+        if pressure or not defenses or v.queue_busy("Vehicle"):
+            return None
+        frontline = sum(min(1., max(0., _number(u.get("hp"), 100)) / 100)
+                        for u in v.units if u.get("type") in _TANKS)
+        artillery = v.total("arty") + v.total("v2rl")
+        if frontline < 3 or artillery >= min(3, int(frontline // 3)):
+            return None
+        choices = []
+        for item in ("arty", "v2rl"):
+            if (not v.available(item, "train") or _cost(v, item) <= 0
+                    or budget < _cost(v, item) + 250
+                    or v.remaining <= _build_time(v, item, "train") + 55):
+                continue
+            sample = {"type": item, "hp": 100}
+            targets = [enemy for enemy in defenses if pos(enemy)
+                       and self._map.approachable(v.base, pos(enemy),
+                                                  max((w.range for w in weapons(v, sample)), default=0))]
+            if not targets:
+                continue
+            efficiency = sum(damage_rate(v, sample, enemy) for enemy in targets) / _cost(v, item)
+            choices.append((-efficiency, item))
+        return min(choices)[1] if choices else None
 
     def _development_goal(self, v, budget, critical_danger, vehicles, owned_combat):
 
@@ -171,8 +264,10 @@ class Economy:
         anchor = anchor or v.base
         if not anchor or not self._map.resources:
             return None
-        candidates = [p for p in self._map.resources if distance(anchor, p) <= 28]
-        return min(candidates, key=lambda p: (distance(anchor, p), p), default=None)
+        paths = self._map.distances(anchor)
+        candidates = [p for p in self._map.resources if distance(anchor, p) <= 28
+                      and (p in paths if self._map.origin is not None else True)]
+        return min(candidates, key=lambda p: (paths.get(p, distance(anchor, p)), distance(anchor, p), p), default=None)
 
     def _unserved_yard(self, v):
         refs = [pos(b) for b in v.buildings if b.get("type") == "proc" and pos(b)]
@@ -425,6 +520,14 @@ class Economy:
             self._mining = MiningManager()
         return self._mining.propose(v, self._map)
 
+    def mark_sent(self, orders, now):
+        if hasattr(self, "_mining"):
+            self._mining.mark_sent(orders, now)
+
+    def mark_failed(self, order, sent_at):
+        if hasattr(self, "_mining"):
+            self._mining.mark_failed(order, sent_at)
+
     def _batch(self, v, item, budget, cap=10, reserve=0, horizon=None):
         cost, duration = _cost(v, item), _build_time(v, item, "train")
         if cost <= 0 or not v.available(item, "train"):
@@ -483,8 +586,9 @@ class Economy:
             anchors = [v.base]
         near = [e for e in v.enemies if pos(e) and (weapons(v, e) or e.get("type") in {"e6", "thf"})
                 and any(distance(pos(e), a) <= 18 for a in anchors)]
+        aircraft, static_defenses = self._opposition(v)
         armor = sum(e.get("type") in _VEHICLES for e in v.enemies)
-        air = sum(e.get("type") in _AIR or v.queue(e.get("type", "")).lower() == "aircraft" for e in v.enemies)
+        air = len(aircraft)
         air_near = any(e.get("type") in _AIR or v.queue(e.get("type", "")).lower() == "aircraft" for e in near)
         infantry_threat = sum(str(e.get("type", "")).startswith("e") for e in near)
         home_danger = len(near) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in near)
@@ -532,10 +636,16 @@ class Economy:
         emergency_harvester = total_harvs == 0 and v.available("harv", "train") and not v.queue_busy("Vehicle") and v.remaining > 50
         income_reserve = min(budget, _cost(v, "harv")) if emergency_harvester else 0
         budget -= income_reserve
+        response, response_vehicle, response_soldier = self._response(v, near, aircraft, budget)
+        response_reserve = 0
+        if response_soldier and not emergency_harvester:
+            remaining = budget - (_cost(v, response_vehicle) if response_vehicle else 0)
+            response_reserve = min(max(0, remaining), _cost(v, response_soldier))
+            budget -= response_reserve
         unserved = self._unserved_yard(v) if v.count("fact") > 1 else None
         expansion = None
         if (1 <= v.count("fact") < 3 and v.now >= 240 * v.count("fact") and v.remaining > 300
-                and v.count("proc") >= 2 and harvs >= 3 and owned_combat >= 12 and not home_danger):
+                and v.count("proc") >= 2 and harvs >= 3 and owned_combat >= 12 and not home_danger and not response):
             expansion = self._map.expansion(v, self._blocked_sites)
         expansion_due = (expansion is not None and v.total("mcv") == 0 and v.available("mcv", "train")
                          and budget >= _cost(v, "mcv") + _cost(v, "proc") + 300)
@@ -549,7 +659,13 @@ class Economy:
         mcv_reserve = _cost(v, "mcv") if expansion_due else 0
         budget -= expansion_reserve + mcv_reserve
         budget = max(0, budget)
-        development = self._development_goal(v, budget, critical_danger, vehicles, owned_combat)
+        development = self._development_goal(v, budget, critical_danger or response, vehicles, owned_combat)
+        if response and not emergency_harvester:
+            development = response_vehicle
+        siege_response = self._siege_response(v, static_defenses, budget,
+                                              home_danger or response or emergency_harvester or total_harvs < 2)
+        if siege_response:
+            development = siege_response
         development_is_vehicle = development is not None and v.queue(development).lower() == "vehicle"
         development_vehicle = min(budget, _cost(v, development)) if development_is_vehicle else 0
         budget -= development_vehicle
@@ -568,6 +684,8 @@ class Economy:
                 building, build_priority = "proc", 92
             elif not has_barracks:
                 building = barracks
+            elif response:
+                building = None
             elif development in {"weap", "proc", "fix"}:
                 building, build_priority = development, 85
             elif unserved and not home_danger and v.remaining > 160:
@@ -645,12 +763,12 @@ class Economy:
                     combat_vehicle_reserve = 0
             elif development == "e1":
                 pass
-            elif v.total("fix") > v.count("fix") and not critical_danger:
+            elif v.total("fix") > v.count("fix") and not critical_danger and not response:
                 pass
             else:
                 goal = min(8, max(1, 2 * v.count("proc"))) if v.count("proc") >= 2 else 1
                 incoming_refinery_harvs = max(0, v.total("proc") - v.count("proc"))
-                if (total_harvs + incoming_refinery_harvs < goal and v.remaining > 220 and not home_danger
+                if (total_harvs + incoming_refinery_harvs < goal and v.remaining > 220 and not home_danger and not response
                         and v.available("harv", "train") and budget >= _cost(v, "harv") + 650):
                     vehicle_item, vehicle_priority, vehicle_cap = "harv", 78, 1
                 else:
@@ -686,8 +804,10 @@ class Economy:
             budget = max(0, budget - income_reserve)
         if development_is_vehicle and not (vehicle_order and vehicle_item == development):
             budget = max(0, budget - _cost(v, development))
-        if v.total("fix") > v.count("fix") and not critical_danger:
+        if v.total("fix") > v.count("fix") and not critical_danger and not response:
             budget = max(0, budget - 1150)
+
+        budget += response_reserve
 
         if not v.queue_busy("Infantry") and v.remaining > 12:
             rifles, rockets = v.total("e1"), v.total("e3")
@@ -698,7 +818,10 @@ class Economy:
                 rocket_goal = max(rocket_goal, min(12, armor + 2 * air + 1))
             if home_danger:
                 rifle_goal = max(rifle_goal, 10)
-            if development == "e1":
+            if response_soldier:
+                item = response_soldier
+                deficit = max(1, (rocket_goal - rockets) if item == "e3" else (rifle_goal - rifles))
+            elif development == "e1":
                 item, deficit = "e1", 3 - rifles
             elif (rockets < rocket_goal and v.available("e3", "train")
                     and (rifles >= 4 or air or armor >= 2)):
@@ -708,7 +831,8 @@ class Economy:
             else:
                 item, deficit = None, 0
             if item:
-                saving_factory = (v.total("weap") == 0 and v.has("proc") and rifles >= (2 if not far else 1) and not critical_danger)
+                saving_factory = (v.total("weap") == 0 and v.has("proc") and rifles >= (2 if not far else 1)
+                                  and not critical_danger and not response)
                 reserve = _cost(v, "weap") if saving_factory and not air else 0
                 if (not v.has("fact") and v.total("mcv") == 0 and v.available("mcv", "train")
                         and v.remaining > 180 and not (vehicle_order and vehicle_item == "mcv")):

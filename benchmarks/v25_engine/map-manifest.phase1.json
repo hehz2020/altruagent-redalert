@@ -1,0 +1,610 @@
+{
+  "v25_development_1.oramap": {
+    "package_sha256": "54c442147782dbd43f5cce0290650fa92bf35da4761836ddc29d9e5717116e34",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "20273682d20a3e96bb7cf6d0e49b20aa1f57f28c2507ac255ddda6a9c9780a71",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_development_2.oramap": {
+    "package_sha256": "26b455826f17ba1dbaf1e536f8df423c1dbcc2ecfbb1622ca239edfbf08856c2",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "28cb6f6c4a6741dc42e0bc38b667ac16fe5ab1c6e181036b2025501109288065",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_development_3.oramap": {
+    "package_sha256": "5707493a37b671040897c7da8000824ae2c51d2efab8bb3765f2511749686c5d",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "2ebea7a78b72234f29d7abf454f9b64452beafb2050077f284969d6f84e629d7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_development_4.oramap": {
+    "package_sha256": "2684024016ac4baaa84283be9d9aad5e13335b4e728890acd9b023a1f250f074",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "ace2d0b8c6a4055597d8567e079ddfce23e7734168e268ed42679e3e0f1ed72d",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_held_out_1.oramap": {
+    "package_sha256": "3f6cf1cec3ffcc1d5a6afeb316fc4a8f5d34fbb9643ebf766452c483aed74ebc",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "e783b3501893d13c6bdc4370abdf2f7d7152d4dd9447a07081fb4898ead1c629",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_held_out_10.oramap": {
+    "package_sha256": "dce8e5f58d8f9a8e0d9ce5e2c6bb0e1b782036cb82678201c296c4eb3d2dd5df",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "709bb43b6753b547f25e1ec431c87dafad087be8f9c68b4535d6638a7673a5ec",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_11.oramap": {
+    "package_sha256": "2daf1dd56670a1e1b44de2f4d3d4c793d02b7495716e3bd297cfc72d24886dfa",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "1133f6c8d19a098585aaba59410d95441e916a06f530eefd7200f7c98793011f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_12.oramap": {
+    "package_sha256": "2305ff18f872e0639282bbf82b1a01e79a56fd88017b2c938727c18d4adc89dd",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "a318e39a6d24d78275448d01282f18bf13a7c76d63b50e7c99ac161e1528e05c",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_2.oramap": {
+    "package_sha256": "b8234dbc183bee9ee6ae2c0a4db5a25aad73315a0498d0c7183221ac98c61767",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "7835b3f872a93145636bc8279cea55533d115c90a122908bd6479c983c281d58",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_held_out_3.oramap": {
+    "package_sha256": "c0e14de04a45c7a8a5292fa8ccd7d9c147e8eac8de44fb5f6dd6e36becc231df",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "36b4c34408f6bedbf06336087a4ce919da4a134287858bb30b2d0d13ba5f1e14",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_held_out_4.oramap": {
+    "package_sha256": "59d5e44c9c5abcc71afe90c0500c61b493e3ec4810a867364a3f40f5d4e023ef",
+    "members": {
+      "map.png": {
+        "sha256": "ae05d8b10c4dfdd490e715e3d4057bba7e0ef366c8c5d28c842b4823624f017f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.yaml": {
+        "sha256": "a17598c84e3aee33c82f8e33fdcce434d0c9c41777ec0d9e3270cf29029272c5",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      },
+      "map.bin": {
+        "sha256": "27f007066bb06a3848935c419aafa8841849942d1f68abdda48757dfed49003b",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          0,
+          54
+        ]
+      }
+    }
+  },
+  "v25_held_out_5.oramap": {
+    "package_sha256": "bed8e7e1c7589062208001f18e23ac0eeb27fc1919f22d556e70a9157abc0946",
+    "members": {
+      "map.png": {
+        "sha256": "76fd456d5e36023d30a1ccc9054d660ad0b75ab23bcfa6e595d15029b7efa69a",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "5f0a25f547b189fa70286e7d9912d2e754f4425474ebf0ef6a376d93e3b131ad",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "8706d6baaf556503fb99cf189ffabe0d04c8b4f3985efb592c91a073c07049ae",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_6.oramap": {
+    "package_sha256": "5a1b4fc8abedd68cdcdd2faec6005bcbd5530c17c3ec86eac7163be1cf827a4a",
+    "members": {
+      "map.png": {
+        "sha256": "76fd456d5e36023d30a1ccc9054d660ad0b75ab23bcfa6e595d15029b7efa69a",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "069fcc76016d800b890ed635a1aa1a9fdb2bb95f5f5c31db676b0a193f2cfe3f",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "8706d6baaf556503fb99cf189ffabe0d04c8b4f3985efb592c91a073c07049ae",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_7.oramap": {
+    "package_sha256": "228b2c1ce7f9c12095dcb2063636b310006d00aff0c59fec08ad2f531e17d432",
+    "members": {
+      "map.png": {
+        "sha256": "76fd456d5e36023d30a1ccc9054d660ad0b75ab23bcfa6e595d15029b7efa69a",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "ddcbcac64aaaeb8a607c6dbf45dc3653f72b6cf0542196d70f27396c1a70e032",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "8706d6baaf556503fb99cf189ffabe0d04c8b4f3985efb592c91a073c07049ae",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_8.oramap": {
+    "package_sha256": "d417254c1ea8ffe1de81dd5aa020cb5aa5f47e02e206dafdaf6c7aebc6fa656f",
+    "members": {
+      "map.png": {
+        "sha256": "76fd456d5e36023d30a1ccc9054d660ad0b75ab23bcfa6e595d15029b7efa69a",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "6c4d45fa6509c4d32ad48badf4f33f5ba1076d627ffe4fa6c835da18835e210d",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "8706d6baaf556503fb99cf189ffabe0d04c8b4f3985efb592c91a073c07049ae",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  },
+  "v25_held_out_9.oramap": {
+    "package_sha256": "fc251ef5a8abdd3feb9b187db474bd64fe6e9fda0845343132729df1e4a0c3ce",
+    "members": {
+      "map.png": {
+        "sha256": "5bbf68042b312355ec9c0b6c287e4e145ae9492584c3f8410097054672530183",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.yaml": {
+        "sha256": "08fdac0dbff6dcd972dceed052a0353d6f0542055fa2174a4b833859eff11355",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      },
+      "map.bin": {
+        "sha256": "fbe4f4a4098c7bf684925f9408e75c6dceae0887ac2b34402d198e37a0ffd3e7",
+        "date_time": [
+          2026,
+          10,
+          16,
+          1,
+          23,
+          46
+        ]
+      }
+    }
+  }
+}
