@@ -4,6 +4,7 @@ from statistics import median
 
 from .model import Intent, distance, living, pos
 from .ground_routes import GroundRoutes
+from .flanking import FlankPlanner
 from .tactics import (ARTILLERY, damage_rate, force_ratio, health, speed,
                      target_score, weapon_range, weapons)
 
@@ -78,6 +79,11 @@ class Military:
         self.march_destination = None
         self.march_updated = 0.
         self.ground_routes = None
+        self.flank_planner = FlankPlanner()
+        self.assault_goal = None
+        self.assault_until = 0.
+        self.assault_health = 0.
+        self.assault_ratio = None
 
     def _combat(self, view, actor):
         kind = _kind(actor)
@@ -222,18 +228,35 @@ class Military:
                 self.visited[point] = view.now
 
     def _goal(self, view, center):
-        visible = [b for b in view.enemy_buildings if living(b) and pos(b) is not None]
+        routes = self._navigation(view)
+        army = [a for a in view.units if self._combat(view, a)]
+        origin = pos(min(army, key=lambda a: distance(pos(a), center))) if army else center
+        def accessible(point, target=None):
+            if not routes.available or origin not in routes.cells:
+                return True
+            landing = routes.waypoint(origin, point, distance_cells=1e9)
+            reach = max((weapon_range(view, a, target) for a in army), default=4.)
+            return landing is not None and distance(landing, point) <= max(1., reach)
+        visible = [b for b in view.enemy_buildings if living(b) and pos(b) is not None
+                   and accessible(pos(b), b)]
         if visible:
-            return pos(min(visible, key=lambda b: distance(center, pos(b))
-                           + (12 if _kind(b) in GROUND_DEFENSE else 0)))
+            priorities = {"weap": 16, "proc": 14, "fact": 12, "barr": 7, "tent": 7,
+                          "powr": 5, "apwr": 7, "dome": 4}
+            def rank(building):
+                value = distance(center, pos(building)) - priorities.get(_kind(building), 0)
+                value += 16 if _kind(building) in GROUND_DEFENSE else 0
+                if self.army_goal is not None and distance(pos(building), self.army_goal) <= 3:
+                    value -= 5
+                return value, _id(building)
+            return pos(min(visible, key=rank))
         mcvs = [u for u in view.enemies if living(u) and _kind(u) == "mcv"
-                and pos(u) is not None]
+                and pos(u) is not None and accessible(pos(u), u)]
         if mcvs:
             return pos(min(mcvs, key=lambda u: distance(center, pos(u))))
-        memories = [p for p, _ in self.memories.values()]
+        memories = [p for p, _ in self.memories.values() if accessible(p)]
         if memories:
             return min(memories, key=lambda p: distance(center, p))
-        if view.enemy_base is not None:
+        if view.enemy_base is not None and accessible(view.enemy_base):
             key = tuple(view.enemy_base)
             if distance(center, key) < 7:
                 self.visited[key] = view.now
@@ -241,7 +264,7 @@ class Military:
                 return key
         if self.sweep:
             return min(self.sweep, key=lambda p: (self.visited.get(p, -10000), distance(center, p)))
-        return view.enemy_base
+        return view.enemy_base if accessible(view.enemy_base) else None
 
     def _scout(self, view, army, enemies):
         scout = next((a for a in army if _id(a) == self.scout_id), None)
@@ -351,26 +374,61 @@ class Military:
         protected = [a for a in view.buildings + view.units
                      if _kind(a) in {"fact", "proc", "weap", "barr", "tent", "harv", "mcv"}
                      and living(a) and pos(a) is not None]
-        threats = [e for e in enemies if (weapons(view, e) or _kind(e) in {"e6", "thf"})
-                   and any(distance(pos(e), pos(p)) < 11 for p in protected)]
-        if not threats:
+        incidents = []
+        for asset in protected:
+            attackers = [e for e in enemies if pos(e) is not None and
+                         ((_kind(e) in {"e6", "thf"} and _kind(asset) != "harv"
+                           and distance(pos(e), pos(asset)) < 6)
+                          or (damage_rate(view, e, asset) > 0 and distance(pos(e), pos(asset))
+                              <= max(8., weapon_range(view, e, asset) + 3.)))]
+            if not attackers:
+                continue
+            fixed = _kind(asset) in {"fact", "proc", "weap", "barr", "tent"}
+            emergency = fixed and (len(attackers) >= 4 or
+                sum(self._value(view, e, e in view.enemy_buildings) for e in attackers) >= 2200)
+            endangered = max(0., 100. - _hp(asset)) / 20.
+            score = (20 if emergency else 0) + (5 if _kind(asset) == "harv" else 3)
+            score += endangered + min(8, len(attackers))
+            score -= min(distance(pos(e), pos(asset)) for e in attackers) * .3
+            incidents.append((score, asset, attackers, emergency))
+        if not incidents:
             return [], set()
-        target = min(threats, key=lambda e: min(distance(pos(e), pos(p)) for p in protected))
-        local = [e for e in threats if distance(pos(e), pos(target)) < 13]
-        candidates = sorted((a for a in army if any(
-            damage_rate(view, a, e) > 0 for e in local)),
-            key=lambda a: distance(pos(a), pos(target)))
+        _, asset, threats, emergency = max(incidents, key=lambda entry: entry[0])
+        target = min(threats, key=lambda e: distance(pos(e), pos(asset)))
+        local = [e for e in enemies if pos(e) is not None and
+                 (weapons(view, e) or _kind(e) in {"e6", "thf"})
+                 and distance(pos(e), pos(target)) < 11]
+        structures = [b for b in protected if _kind(b) != "harv" and b in view.buildings]
+        remote = (_kind(asset) == "harv" and
+                  min((distance(pos(asset), pos(b)) for b in structures), default=99) > 20)
+        shelters = [b for b in view.buildings if weapons(view, b) and
+                    any(damage_rate(view, b, e, at_distance=distance(pos(b), pos(e))) > 0
+                        for e in local)]
+        if (shelters and _hp(asset) >= 80 and force_ratio(view, shelters, local) >= 1.6
+                and all(any(damage_rate(view, b, e,
+                            at_distance=distance(pos(b), pos(e))) > 0 for b in shelters) for e in local)):
+            return [], set()
+        candidates = [a for a in army if any(damage_rate(view, a, e) > 0 for e in local)
+                      and (emergency or distance(pos(a), pos(asset)) <= (22 if remote else 30))]
+        candidates.sort(key=lambda a: distance(pos(a), pos(target)) / max(.4, speed(view, a))
+                        + min((health(view, e) / max(1., damage_rate(view, a, e))
+                               for e in local if damage_rate(view, a, e) > 0), default=1000) * .1)
         if not candidates:
             return [], set()
+        cap = len(candidates) if emergency else min(3 if remote else 6, max(2, (len(army) + 2) // 3))
         defenders = []
-        for a in candidates:
+        for a in candidates[:cap]:
             defenders.append(a)
-            if len(defenders) >= 2 and force_ratio(view, defenders, local, horizon=16) >= 1.4:
+            if force_ratio(view, defenders + shelters, local, horizon=16) >= 1.35:
                 break
         ids = {_id(a) for a in defenders}
         center = _center(defenders)
-        ratio = force_ratio(view, defenders, local)
+        ratio = force_ratio(view, defenders + shelters, local)
         if ratio < .65 and any(distance(pos(a), pos(e)) < 9 for a in defenders for e in local):
+            refuge = min(shelters, key=lambda b: distance(pos(b), center), default=None)
+            if refuge is not None:
+                return self._orders(view, defenders, "attack_move", pos(refuge),
+                                    "defense-cover", 97), ids
             self.withdraw_goal = self._fallback(view, center, local)
             return self._withdraw(view, defenders, local, "defense-withdraw"), ids
         orders, engaged = self._local_fire(view, [a for a in defenders if _kind(a) not in ARTILLERY],
@@ -492,7 +550,8 @@ class Military:
         origin = self._body_origin(army, goal)
         routes = self._navigation(view)
         if routes.available:
-            return routes.waypoint(origin, goal, distance_cells=step) or list(origin)
+            return (self.flank_planner.waypoint(view, routes, army, origin, goal,
+                                               self.contacts, step=step) or list(origin))
         dx, dy = goal[0] - origin[0], goal[1] - origin[1]
         norm = max(1., hypot(dx, dy))
         scale = min(step, norm) / norm
@@ -569,16 +628,56 @@ class Military:
             reserved.add(_id(a))
         return orders, reserved
 
-    def _assault_standoff(self, view, army, goal, enemies):
-
+    def _resistance(self, view, goal, enemies, army):
         resistance = [e for e in enemies if weapons(view, e) and distance(pos(e), goal) < 12]
         visible_ids = {_id(e) for e in enemies}
         resistance += [e for uid, (e, seen, building) in self.contacts.items()
-                       if uid not in visible_ids and building and weapons(view, e)
-                       and view.now - seen < 90 and distance(pos(e), goal) < 12]
-        if not resistance or force_ratio(view, army, resistance, horizon=30, projected=True) >= 1.1:
-            return None
+                       if uid not in visible_ids and weapons(view, e)
+                       and view.now - seen < (90 if building else 15)
+                       and distance(pos(e), goal) < 12]
         center = self._body_center(army, goal)
+        line = [a for a in army if _kind(a) not in ARTILLERY] or army
+        reach = min(5., max((weapon_range(view, a) for a in line), default=4.))
+        dx, dy = center[0] - goal[0], center[1] - goal[1]
+        norm = max(1., hypot(dx, dy))
+        approach = (goal[0] + reach * dx / norm, goal[1] + reach * dy / norm)
+        result = []
+        building_ids = {_id(b) for b in view.enemy_buildings}
+        building_ids.update(uid for uid, (_, _, building) in self.contacts.items() if building)
+        for enemy in resistance:
+            if _id(enemy) in building_ids and _kind(enemy) in GROUND_DEFENSE:
+                radius = max((weapon_range(view, enemy, a) for a in line), default=0.) + 1.5
+                if distance(pos(enemy), center) > radius and distance(pos(enemy), approach) > radius:
+                    continue
+            result.append(enemy)
+        return result
+
+    def _assault_active(self, view, army, goal, enemies):
+        if (goal is None or self.assault_goal is None or view.now >= self.assault_until
+                or distance(goal, self.assault_goal) > 6):
+            return False
+        resistance = self._resistance(view, goal, enemies, army)
+        ratio = force_ratio(view, army, resistance, horizon=24, projected=True)
+        intact = sum(health(view, a) for a in army) >= self.assault_health * .68
+        if ratio < .85 or not intact:
+            self.assault_until = 0.
+            return False
+        return True
+
+    def _assault_standoff(self, view, army, goal, enemies):
+        resistance = self._resistance(view, goal, enemies, army)
+        center = self._body_center(army, goal)
+        if distance(center, goal) > 23:
+            return None
+        ratio = force_ratio(view, army, resistance, horizon=30, projected=True)
+        self.assault_ratio = ratio
+        active = self._assault_active(view, army, goal, enemies)
+        if not resistance or ratio >= 1.1 or active:
+            if resistance and ratio >= 1.15 and not active:
+                self.assault_goal = tuple(goal)
+                self.assault_until = view.now + 18.
+                self.assault_health = sum(health(view, a) for a in army)
+            return None
         dx, dy = center[0] - goal[0], center[1] - goal[1]
         norm = max(1., hypot(dx, dy))
         radius = 10 if any(_kind(a) in ARTILLERY for a in army) else 15
@@ -613,13 +712,16 @@ class Military:
         orders += raids
         main = [a for a in main if _id(a) not in raiding]
         center = _center(main)
+        goal = self._goal(view, center)
         nearby = [e for e in enemies if weapons(view, e) and distance(pos(e), center) < 17]
         local = [a for a in main if distance(pos(a), center) < 15]
         support = [b for b in view.buildings if _kind(b) in GROUND_DEFENSE | {"agun", "sam"}
                    and b.get("powered", True) and distance(pos(b), center) < 10]
         ratio = force_ratio(view, local + support, nearby)
         self.last_ratio = ratio
-        if nearby and ratio < .8:
+        assaulting = self._assault_active(view, main, goal, enemies)
+        if nearby and ratio < (.68 if assaulting else .8):
+            self.assault_until = 0.
             if self.mode != "retreat" or view.now >= self.retreat_until:
                 self.withdraw_goal = self._fallback(view, center, nearby)
             self.retreat_until = max(self.retreat_until, view.now + 9)
@@ -637,7 +739,6 @@ class Military:
             main = [a for a in main if _id(a) not in weak_ids]
         if not main:
             return orders
-        goal = self._goal(view, center)
         if goal is None:
             return orders
         total = sum(self._value(view, a) for a in main)

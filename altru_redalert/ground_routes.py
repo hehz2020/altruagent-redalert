@@ -121,6 +121,22 @@ class GroundRoutes:
                     heappush(pending, (candidate, neighbor))
         return costs, next_cell
 
+    def path(self, start, goal):
+        start, goal = pos(start), pos(goal)
+        if start not in self._component or goal is None:
+            return []
+        target = self._project(self._component[start], goal)
+        if target not in self._fields:
+            self._fields[target] = self._build_field(target)
+            if len(self._fields) > FIELD_CACHE_LIMIT:
+                self._fields.popitem(last=False)
+        self._fields.move_to_end(target)
+        _, following = self._fields[target]
+        result = [start]
+        while result[-1] in following:
+            result.append(following[result[-1]][0])
+        return result
+
     def waypoint(self, start, goal, distance_cells=6):
 
         start, goal = pos(start), pos(goal)
