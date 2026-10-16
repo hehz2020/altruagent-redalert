@@ -91,12 +91,21 @@ def main() -> None:
     distributions = list(metadata.distributions())
     packages = sorted({f"{item.metadata['Name']}=={item.version}" for item in distributions})
     licenses, license_index = license_entries(distributions)
+    controller_files = {
+        path.relative_to(ROOT).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((ROOT / "altru_redalert").rglob("*.py"))
+        if "__pycache__" not in path.parts
+    }
+    controller_digest = hashlib.sha256(json.dumps(
+        controller_files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     info = {
         "source_repository": "https://github.com/hehz2020/altruagent-redalert",
         "commit": commit, "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(), "platform": platform.platform(),
         "architecture": "Windows x64", "dependencies": packages,
         "build_environment": build_environment,
+        "controller_package_sha256": controller_digest,
+        "controller_files_sha256": controller_files,
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
         "validation": ("Actual Windows PE executable: offline controller, spawned worker and persistent MCP passed; "
                        f"tested in {build_environment}"),
@@ -111,7 +120,8 @@ def main() -> None:
         archive.write(release / "build-info.json", "build-info.json")
         archive.write(release / "self-test.json", "self-test.json")
         for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "SOURCES.md",
-                     "BENCHMARK.md", "BENCHMARK_RESULTS.json", "VALIDATION_V24.md", "VALIDATION_V25.md"):
+                     "BENCHMARK.md", "BENCHMARK_RESULTS.json", "VALIDATION_V24.md", "VALIDATION_V25.md",
+                     "VALIDATION_V26.md"):
             path = ROOT / name
             if path.is_file():
                 archive.write(path, name)

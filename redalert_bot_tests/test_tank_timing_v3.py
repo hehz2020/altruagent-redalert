@@ -9,10 +9,17 @@ def test_second_refinery_precedes_factory_without_a_light_vehicle_requirement():
     assert purchases(v) == [{"cmd": "build", "item": "proc"}]
 
 
-def test_third_miner_is_protected_instead_of_buying_a_cheap_car():
-    v = development_view(seconds=140, cash=1099, harvesters=2, refineries=2, vehicle=False)
-    assert purchases(v) == []
-    v = development_view(seconds=141, cash=1100, harvesters=2, refineries=2, vehicle=False)
+def test_first_combat_escort_precedes_an_uncommitted_third_miner():
+    # v26 deliberately covers the vulnerable depot/third-miner interval first.
+    # Once that single escort exists, the third miner keeps its exact-price goal.
+    for cash in (599, 600, 1099, 1100):
+        v = development_view(seconds=140, cash=cash, harvesters=2,
+                             refineries=2, vehicle=False)
+        expected = [] if cash < 600 else [{"cmd": "train", "item": "ftrk"}]
+        if cash >= 900:
+            expected.append({"cmd": "train", "item": "e3"})
+        assert purchases(v) == expected
+    v = development_view(seconds=141, cash=1100, harvesters=2, refineries=2, vehicle=True)
     assert purchases(v) == [{"cmd": "train", "item": "harv"}]
 
 

@@ -96,6 +96,45 @@ class Economy:
         self._ore_pressure = {}
         self._defense_targets = {}
         self._defense_placement_attempts = {}
+        self._infantry_alert_until = 0.0
+        self._factory_seen_at = None
+
+    def _opening_pressure(self, v, anchors):
+        """A visible group approaching our assets, never an inferred enemy army."""
+        approaching = []
+        if v.now < 360 and sum(v.count(t) for t in _TANKS) < 3:
+            infantry = [e for e in v.enemies if pos(e) and weapons(v, e)
+                        and (str(e.get("type", "")).startswith("e")
+                             or v.queue(e.get("type", "")).lower() == "infantry")
+                        and any(distance(pos(e), a) <= 24 for a in anchors)]
+            approaching = max(([e for e in infantry if distance(pos(e), pos(center)) <= 12]
+                               for center in infantry), key=len, default=[])
+            if len(approaching) >= 4:
+                self._infantry_alert_until = v.now + 25
+            else:
+                approaching = []
+        return v.now < self._infantry_alert_until, approaching
+
+    def _rush_cancel(self, v):
+        # One observed optional commitment at a time. A cancellation does not
+        # create spendable money here: wait for the queue/receipt to reconcile.
+        if any(o.get("cmd") == "cancel" for o in v.pending_orders):
+            return [], True
+        if any(o.get("cmd") in {"build", "train", "place"} for o in v.pending_orders):
+            return [], False
+        optional = []
+        for p in v.production:
+            item = str(p.get("item", "")).lower()
+            progress = _number(p.get("progress"))
+            if p.get("ready") or not 0 <= progress < .8:
+                continue
+            if item == "fix" or (item == "harv" and v.count("harv") >= 2):
+                optional.append((item != "fix", item))
+        if not optional:
+            return [], False
+        item = min(optional)[1]
+        return [Intent({"cmd": "cancel", "item": item}, priority=100,
+                       cooldown=2, key=f"rush-cancel:{item}")], True
 
     def _development_goal(self, v, budget, critical_danger, vehicles, owned_combat):
 
@@ -109,7 +148,24 @@ class Economy:
             elif v.total("weap") == 0 and v.available("weap", "build"):
                 item = "weap"
             elif v.has("weap"):
-                if v.total("harv") + incoming < 3 and v.available("harv", "train"):
+                # A first cheap combat vehicle covers the otherwise empty
+                # interval while a depot unlocks medium/heavy tanks.
+                escort = next((x for x in ("ftrk", "jeep", "apc", "1tnk")
+                               if v.available(x, "train") and _cost(v, x) > 0), None)
+                # A placed factory can be visible one observation before its
+                # Vehicle queue enables legal items. Do not commit to a depot
+                # in that brief window and thereby skip the opening escort.
+                factory_starting = (v.now < 240 and v.total("harv") >= 2 and not vehicles
+                                    and v.total("fix") == 0 and not v.queue_busy("Vehicle")
+                                    and not escort and not v.available("harv", "train")
+                                    and self._factory_seen_at is not None
+                                    and v.now - self._factory_seen_at < 3)
+                if (v.now < 240 and v.total("harv") >= 2 and not vehicles
+                        and v.total("fix") == 0 and escort and not v.queue_busy("Vehicle")):
+                    item = escort
+                elif factory_starting:
+                    pass
+                elif v.total("harv") + incoming < 3 and v.available("harv", "train"):
                     item = "harv"
                 elif (v.total("fix") == 0 and v.total("harv") >= 2
                       and v.available("fix", "build") and _power(v, "fix") is not None):
@@ -147,6 +203,11 @@ class Economy:
         return item
 
     def _refresh(self, v):
+        if not v.has("weap"):
+            self._factory_seen_at = None
+        elif (self._factory_seen_at is None
+              or self._last_now is not None and v.now < self._last_now):
+            self._factory_seen_at = v.now
         layout = v.map_info.get("layout")
         if (self._map is None or self._map_id != v.map_id
                 or self._map_layout != layout or self._map.bounds != v.bounds):
@@ -303,7 +364,8 @@ class Economy:
             return None
         return list(sites[min(attempt * 3, len(sites) - 1)][1])
 
-    def _defense_build(self, v, budget, power, plan, close, air_near, ready, reserved_vehicle=0):
+    def _defense_build(self, v, budget, power, plan, close, air_near, ready, reserved_vehicle=0,
+                       infantry_alert=False):
         if (v.queue_busy("Defense") or v.remaining <= 40 or v.total("harv") == 0
                 or any(v.queue(x).lower() == "defense" for x in ready)):
             return None, 0
@@ -340,6 +402,8 @@ class Economy:
         if v.total("harv") < 2 and v.available("harv", "train"):
             reserve = max(reserve, _cost(v, "harv") + 250)
         reserve = max(250, reserve - reserved_vehicle)
+        if infantry_alert and not armor and not air_near and v.count("harv") >= 2:
+            reserve = 150
         invested = sum(v.total(x) * _cost(v, x) for x in _DEFENSES)
         for item in choices:
             cost, drain = _cost(v, item), _power(v, item)
@@ -483,15 +547,22 @@ class Economy:
             anchors = [v.base]
         near = [e for e in v.enemies if pos(e) and (weapons(v, e) or e.get("type") in {"e6", "thf"})
                 and any(distance(pos(e), a) <= 18 for a in anchors)]
+        infantry_alert, approaching = self._opening_pressure(v, anchors)
         armor = sum(e.get("type") in _VEHICLES for e in v.enemies)
         air = sum(e.get("type") in _AIR or v.queue(e.get("type", "")).lower() == "aircraft" for e in v.enemies)
         air_near = any(e.get("type") in _AIR or v.queue(e.get("type", "")).lower() == "aircraft" for e in near)
-        infantry_threat = sum(str(e.get("type", "")).startswith("e") for e in near)
-        home_danger = len(near) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in near)
+        infantry_threat = max(len(approaching), sum(str(e.get("type", "")).startswith("e") for e in near))
+        home_danger = infantry_alert or len(near) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in near)
         close = [e for e in near if any(distance(pos(e), a) <= 10 for a in anchors)]
-        critical_danger = len(close) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in close)
+        critical_danger = infantry_alert or len(close) >= 2 or any(e.get("type") in _VEHICLES | _AIR for e in close)
         target = min((pos(e) for e in near), key=lambda p: distance(p, v.base), default=None)
         ore_defense = self._ore_defense_plan(v)
+        if approaching and ore_defense is None and anchors:
+            threat = min(approaching, key=lambda e: min(distance(pos(e), a) for a in anchors))
+            anchor = min(anchors, key=lambda a: distance(a, pos(threat)))
+            ore_defense = {"anchor": anchor, "point": pos(threat), "enemies": approaching,
+                           "seen": v.now, "first": v.now, "repeat": False, "urgent": True,
+                           "severe": len(approaching) >= 6, "armor": 0, "air": False}
         ready = _ready_buildings(v)
         for item in sorted(ready):
             if _pending(v, "place", item):
@@ -506,7 +577,6 @@ class Economy:
         intents.extend(recovery)
         if holding_recovery:
             return intents
-
         damaged = sorted((b for b in v.buildings if 0 < _number(b.get("hp"), 100) < 85
                           and not b.get("repairing") and isinstance(b.get("id"), int)),
                          key=lambda b: (b.get("type") not in {"fact", "proc", "powr", "weap"}, b.get("hp", 100)))
@@ -515,6 +585,11 @@ class Economy:
                 if home_danger or _number(b.get("hp"), 100) < 60 or v.funds >= 1200:
                     intents.append(Intent({"cmd": "repair", "building": b["id"], "on": True},
                                           priority=99 if home_danger else 75, cooldown=3, key=f"repair:{b['id']}"))
+        if infantry_alert:
+            cancelled, holding_cancel = self._rush_cancel(v)
+            intents.extend(cancelled)
+            if holding_cancel:
+                return intents
         projected_power = v.power_surplus
         future_builds = [str(p.get("item", "")).lower() for p in v.production
                          if str(p.get("queue", v.queue(p.get("item", "")))).lower() in {"building", "defense"}]
@@ -532,6 +607,16 @@ class Economy:
         emergency_harvester = total_harvs == 0 and v.available("harv", "train") and not v.queue_busy("Vehicle") and v.remaining > 50
         income_reserve = min(budget, _cost(v, "harv")) if emergency_harvester else 0
         budget -= income_reserve
+        # The first four rifles include one scout. Reserve their budget before
+        # peaceful development, but let needed power and urgent defense use it.
+        screen_order = False
+        screen_reserve = 0
+        if (v.now < 180 and v.has("fact") and v.has("proc") and harvs > 0
+                and v.power_surplus >= 0 and v.total("e1") < 4
+                and v.available("e1", "train") and not v.queue_busy("Infantry")):
+            n = self._batch(v, "e1", budget, cap=4 - v.total("e1"))
+            screen_reserve = n * _cost(v, "e1")
+            budget -= screen_reserve
         unserved = self._unserved_yard(v) if v.count("fact") > 1 else None
         expansion = None
         if (1 <= v.count("fact") < 3 and v.now >= 240 * v.count("fact") and v.remaining > 300
@@ -575,7 +660,7 @@ class Economy:
             elif (far and not home_danger and v.total("proc") < 2 and v.total("weap") == 0
                   and v.count("e1") >= 2 and v.remaining > 300):
                 building = "proc"
-            elif v.total("weap") == 0:
+            elif v.total("weap") == 0 and not infantry_alert:
                 building = "weap"
             elif (v.total("proc") < 2 and v.now >= 100 and v.remaining > 240 and not home_danger
                   and budget >= _cost(v, "proc") + 300):
@@ -583,7 +668,8 @@ class Economy:
             elif (v.total("fix") == 0 and v.available("fix", "build") and _power(v, "fix") is not None
                   and v.now >= 150 and v.remaining > 220
                   and (v.count("proc") >= 2 or armor >= 3) and harvs >= 2 and not home_danger
-                  and budget >= _cost(v, "fix") + 500):
+                  and budget >= _cost(v, "fix") + 500
+                  and (v.now >= 240 or vehicles > 0)):
                 building = "fix"
             elif (v.total("dome") == 0 and v.available("dome", "build") and _power(v, "dome") is not None
                   and v.now >= 210 and v.remaining > 170
@@ -610,6 +696,10 @@ class Economy:
                     building = None
                 if building:
                     cost = _cost(v, building)
+                    if building in {"powr", "apwr"} and budget < cost:
+                        released = min(screen_reserve, cost - budget)
+                        budget += released
+                        screen_reserve -= released
                     end_ok = v.remaining > _build_time(v, building, "build") + 35
                     if (v.available(building, "build") and cost > 0 and budget >= cost
                             and (end_ok or (building in {"powr", "apwr"} and v.power_surplus < 0
@@ -621,17 +711,33 @@ class Economy:
                         development_started = building == development
 
         defense_order, defense_cost = self._defense_build(
-            v, budget, projected_power, ore_defense, close if critical_danger else [],
-            air_near, ready, development_vehicle)
+            v, budget + (screen_reserve if infantry_alert else 0), projected_power,
+            ore_defense, close if critical_danger else [],
+            air_near, ready, development_vehicle, infantry_alert)
         if defense_order is not None:
+            released = min(screen_reserve, max(0, defense_cost - budget))
+            budget += released
+            screen_reserve -= released
             intents.append(defense_order)
             budget -= defense_cost
+
+        if screen_reserve:
+            n = self._batch(v, "e1", screen_reserve, cap=4 - v.total("e1"))
+            if n:
+                intents.append(Intent({"cmd": "train", "item": "e1", "count": n}, priority=88,
+                                      cooldown=.6, key="train:e1"))
+                screen_reserve -= n * _cost(v, "e1")
+                screen_order = True
+            budget += screen_reserve
 
         budget += income_reserve + mcv_reserve + development_vehicle
         if development in {"weap", "proc", "fix"} and not development_started:
             budget = max(0, budget - _cost(v, development))
         vehicle_item, vehicle_priority, vehicle_cap = None, 63, 2
         combat_vehicle_reserve = 250
+        rush_escort = next((x for x in ("ftrk", "jeep", "apc")
+                            if v.available(x, "train") and _cost(v, x) > 0
+                            and budget >= _cost(v, x) + 100), None) if infantry_alert else None
         if not v.queue_busy("Vehicle") and v.remaining > 25:
             if emergency_harvester:
                 vehicle_item, vehicle_priority, vehicle_cap = "harv", 93, 1
@@ -639,6 +745,9 @@ class Economy:
                 vehicle_item, vehicle_priority, vehicle_cap = "mcv", 92, 1
             elif expansion_due:
                 vehicle_item, vehicle_priority, vehicle_cap = "mcv", 84, 1
+            elif rush_escort and sum(v.total(x) for x in ("ftrk", "jeep", "apc")) < 2:
+                vehicle_item = rush_escort
+                vehicle_priority, vehicle_cap, combat_vehicle_reserve = 90, 1, 100
             elif development_is_vehicle:
                 if budget >= _cost(v, development):
                     vehicle_item, vehicle_priority, vehicle_cap = development, 84, 1
@@ -689,7 +798,7 @@ class Economy:
         if v.total("fix") > v.count("fix") and not critical_danger:
             budget = max(0, budget - 1150)
 
-        if not v.queue_busy("Infantry") and v.remaining > 12:
+        if not screen_order and not v.queue_busy("Infantry") and v.remaining > 12:
             rifles, rockets = v.total("e1"), v.total("e3")
             core = sum(v.total(x) for x in ("3tnk", "2tnk", "1tnk"))
             rifle_goal = min(24, 6 + core * 2) if v.has("weap") else (5 if home_danger else 3)
@@ -698,7 +807,9 @@ class Economy:
                 rocket_goal = max(rocket_goal, min(12, armor + 2 * air + 1))
             if home_danger:
                 rifle_goal = max(rifle_goal, 10)
-            if development == "e1":
+            if infantry_alert and rifles < max(6, infantry_threat + 2) and not air and armor < 2:
+                item, deficit = "e1", max(6, infantry_threat + 2) - rifles
+            elif development == "e1":
                 item, deficit = "e1", 3 - rifles
             elif (rockets < rocket_goal and v.available("e3", "train")
                     and (rifles >= 4 or air or armor >= 2)):
